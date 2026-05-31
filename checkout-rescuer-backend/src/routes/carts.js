@@ -59,6 +59,31 @@ router.get('/', (req, res) => {
   }
 });
 
+// GET /api/carts/by-token/:token - Get cart by recovery token (used by WP plugin for cart restoration)
+router.get('/by-token/:token', (req, res) => {
+  try {
+    const db = getDb();
+    const cart = db.prepare(`
+      SELECT id, cart_contents, cart_total, currency, coupon_code, session_id, store_url
+      FROM abandoned_carts WHERE recovery_token = ?
+    `).get(req.params.token);
+
+    if (!cart) {
+      return res.status(404).json({ success: false, error: 'Cart not found.' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        ...cart,
+        cart_contents: JSON.parse(cart.cart_contents || '[]'),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // GET /api/carts/:id - Get single cart detail
 router.get('/:id', (req, res) => {
   try {

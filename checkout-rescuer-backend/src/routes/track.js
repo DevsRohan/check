@@ -7,6 +7,20 @@ const router = express.Router();
 const { getDb } = require('../utils/database');
 const { v4: uuidv4 } = require('uuid');
 
+// Simple auth check for track endpoints - verifies API key if configured
+function trackAuth(req, res, next) {
+  const secretKey = process.env.API_SECRET_KEY;
+  if (!secretKey) return next(); // No key configured = allow all
+
+  const apiKey = req.headers['x-api-key'] || req.body.api_key || req.query.api_key;
+  if (!apiKey || apiKey !== secretKey) {
+    return res.status(401).json({ success: false, error: 'Unauthorized.' });
+  }
+  next();
+}
+
+router.use(trackAuth);
+
 // POST /api/track/cart - Save/update cart from WooCommerce
 router.post('/cart', (req, res) => {
   try {
@@ -93,11 +107,19 @@ router.post('/heartbeat', (req, res) => {
 
     params.push(session_id);
 
-    db.prepare(`
-      UPDATE abandoned_carts SET ${updates.join(', ')}
+    // SQLite doesn't support ORDER BY/LIMIT in UPDATE, so find the row first
+    const row = db.prepare(`
+      SELECT id FROM abandoned_carts
       WHERE session_id = ? AND status = 'active'
       ORDER BY id DESC LIMIT 1
-    `).run(...params);
+    `).get(session_id);
+
+    if (row) {
+      db.prepare(`
+        UPDATE abandoned_carts SET ${updates.join(', ')}
+        WHERE id = ?
+      `).run(...[...params.slice(0, -1), row.id]);
+    }
 
     res.json({ success: true });
   } catch (error) {

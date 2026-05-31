@@ -40,13 +40,21 @@ class CR_Admin {
         wp_enqueue_style( 'cr-admin', CR_PLUGIN_URL . 'admin/css/cr-admin.css', array(), CR_VERSION );
         wp_enqueue_script( 'cr-admin', CR_PLUGIN_URL . 'admin/js/cr-admin.js', array( 'jquery' ), CR_VERSION, true );
 
+        // Merge local settings with remote settings from backend
+        $local_settings = get_option( 'cr_settings', array() );
+        $remote_settings = CR_API::get( 'settings' );
+        $merged = $local_settings;
+        if ( ! empty( $remote_settings['data'] ) && is_array( $remote_settings['data'] ) ) {
+            $merged = array_merge( $remote_settings['data'], $local_settings );
+        }
+
         wp_localize_script( 'cr-admin', 'crAdmin', array(
             'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
             'nonce'      => wp_create_nonce( 'cr_admin_nonce' ),
             'backendUrl' => rtrim( Checkout_Rescuer::get_setting( 'backend_url', '' ), '/' ),
             'apiKey'     => Checkout_Rescuer::get_setting( 'api_key', '' ),
             'currency'   => get_woocommerce_currency_symbol(),
-            'settings'   => get_option( 'cr_settings', array() ),
+            'settings'   => $merged,
             'page'       => isset( $_GET['page'] ) ? sanitize_text_field( $_GET['page'] ) : 'checkout-rescuer',
         ) );
     }

@@ -32,17 +32,59 @@ class CR_Recovery {
             $_COOKIE['cr_session_id'] = $session;
         }
 
+        // Fetch cart contents from backend and restore items
+        $this->restore_cart_items( $token );
+
         // Apply coupon if provided
         if ( ! empty( $coupon ) && WC()->cart ) {
             WC()->cart->apply_coupon( $coupon );
         }
 
         // Set welcome back flag
-        WC()->session->set( 'cr_welcome_back', true );
+        if ( WC()->session ) {
+            WC()->session->set( 'cr_welcome_back', true );
+        }
 
         // Redirect to checkout without the params (clean URL)
         wp_safe_redirect( wc_get_checkout_url() );
         exit;
+    }
+
+    /**
+     * Fetch cart contents from backend by token and add items to WC cart.
+     *
+     * @param string $token Recovery token.
+     */
+    private function restore_cart_items( $token ) {
+        // Fetch cart detail from backend
+        $result = CR_API::get( 'carts/by-token/' . $token );
+
+        if ( empty( $result['success'] ) || empty( $result['data']['cart_contents'] ) ) {
+            return;
+        }
+
+        $items = $result['data']['cart_contents'];
+
+        // Clear existing cart to avoid duplicates
+        WC()->cart->empty_cart();
+
+        foreach ( $items as $item ) {
+            $product_id   = absint( $item['product_id'] ?? 0 );
+            $variation_id = absint( $item['variation_id'] ?? 0 );
+            $quantity     = absint( $item['quantity'] ?? 1 );
+
+            if ( ! $product_id ) {
+                continue;
+            }
+
+            // Verify product still exists and is purchasable
+            $product = wc_get_product( $variation_id ? $variation_id : $product_id );
+            if ( ! $product || ! $product->is_purchasable() || ! $product->is_in_stock() ) {
+                continue;
+            }
+
+            WC()->cart->add_to_cart( $product_id, $quantity, $variation_id );
+        }
     }
 
     /**
