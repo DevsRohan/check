@@ -148,7 +148,7 @@ var CR = {
 
     if (!data || !data.labels || !data.labels.length) {
       ctx.font = '14px Inter, sans-serif';
-      ctx.fillStyle = '#94a3b8';
+      ctx.fillStyle = '#64748b';
       ctx.textAlign = 'center';
       ctx.fillText('Chart data will appear once carts are tracked.', canvas.width/2, canvas.height/2);
       return;
@@ -162,7 +162,7 @@ var CR = {
     var step = cw / (data.labels.length - 1 || 1);
 
     // Grid
-    ctx.strokeStyle = '#334155'; ctx.lineWidth = 1;
+    ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
     for (var i = 0; i <= 4; i++) {
       var y = pad.top + (ch/4)*i;
       ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w-pad.right, y); ctx.stroke();
@@ -198,7 +198,7 @@ var CR = {
     }
 
     // Labels
-    ctx.font = '20px Inter'; ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center';
+    ctx.font = '20px Inter'; ctx.fillStyle = '#64748b'; ctx.textAlign = 'center';
     var interval = Math.max(1, Math.ceil(data.labels.length / 8));
     for (var l = 0; l < data.labels.length; l += interval) {
       ctx.fillText(data.labels[l], pad.left + step*l, h - 15);
