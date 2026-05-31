@@ -17,6 +17,7 @@ class Checkout_Rescuer {
         require_once CR_PLUGIN_DIR . 'includes/class-cr-api.php';
         require_once CR_PLUGIN_DIR . 'includes/class-cr-tracker.php';
         require_once CR_PLUGIN_DIR . 'includes/class-cr-recovery.php';
+        require_once CR_PLUGIN_DIR . 'includes/class-cr-diagnostics.php';
 
         // Admin
         if ( is_admin() ) {

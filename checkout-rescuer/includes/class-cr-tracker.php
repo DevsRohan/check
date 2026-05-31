@@ -1,7 +1,11 @@
 <?php
 /**
- * Cart Tracker - captures phone and sends cart data to backend
- * Supports BOTH classic checkout AND WooCommerce Blocks checkout
+ * Cart Tracker - captures phone & cart data, sends to backend.
+ * Works with BOTH Classic checkout AND WooCommerce Blocks checkout.
+ *
+ * Capture happens via TWO reliable layers:
+ *  1. Server-side hooks (primary, 100% reliable - reads order/draft data)
+ *  2. Frontend JS (backup - captures as user types)
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
@@ -11,113 +15,30 @@ class CR_Tracker {
     public function init() {
         add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
 
-        // Classic checkout - consent field
+        // Consent field
         add_action( 'woocommerce_after_checkout_billing_form', array( $this, 'render_consent' ) );
-
-        // Blocks checkout - consent field via checkout fields API
-        add_action( 'woocommerce_blocks_loaded', array( $this, 'register_blocks_integration' ) );
-
-        // WooCommerce checkout fields API (WC 8.2+) - adds consent as custom field
         add_action( 'woocommerce_init', array( $this, 'register_checkout_field' ) );
 
-        // AJAX handlers (work for both classic and blocks)
+        // AJAX (frontend JS backup capture)
         add_action( 'wp_ajax_cr_track_cart', array( $this, 'ajax_track_cart' ) );
         add_action( 'wp_ajax_nopriv_cr_track_cart', array( $this, 'ajax_track_cart' ) );
         add_action( 'wp_ajax_cr_heartbeat', array( $this, 'ajax_heartbeat' ) );
         add_action( 'wp_ajax_nopriv_cr_heartbeat', array( $this, 'ajax_heartbeat' ) );
 
-        // Order conversion tracking
+        // SERVER-SIDE capture (primary, reliable)
+        add_action( 'woocommerce_checkout_update_order_review', array( $this, 'capture_classic' ) );
+        add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( $this, 'capture_blocks' ), 10, 2 );
+
+        // Conversion tracking (classic + blocks)
         add_action( 'woocommerce_checkout_order_processed', array( $this, 'mark_converted' ), 10, 3 );
         add_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'mark_converted_blocks' ) );
-
-        // REST API endpoint for blocks checkout tracking
-        add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
     }
 
     /**
-     * Register REST routes for blocks checkout
-     */
-    public function register_rest_routes() {
-        register_rest_route( 'checkout-rescuer/v1', '/track', array(
-            'methods'  => 'POST',
-            'callback' => array( $this, 'rest_track_cart' ),
-            'permission_callback' => '__return_true',
-        ) );
-    }
-
-    /**
-     * REST API handler for cart tracking (blocks checkout)
-     */
-    public function rest_track_cart( $request ) {
-        $phone   = sanitize_text_field( $request->get_param( 'phone' ) ?? '' );
-        $name    = sanitize_text_field( $request->get_param( 'name' ) ?? '' );
-        $email   = sanitize_email( $request->get_param( 'email' ) ?? '' );
-        $consent = absint( $request->get_param( 'consent' ) ?? 0 );
-
-        if ( empty( $phone ) ) {
-            return new WP_REST_Response( array( 'success' => false, 'message' => 'Phone required.' ), 400 );
-        }
-
-        $cart_data  = $this->get_cart_data();
-        $session_id = $this->get_session_id();
-
-        $result = CR_API::post( 'track/cart', array(
-            'session_id'     => $session_id,
-            'store_url'      => home_url(),
-            'customer_name'  => $name,
-            'customer_email' => $email,
-            'customer_phone' => $phone,
-            'cart_contents'  => $cart_data['items'],
-            'cart_total'     => $cart_data['total'],
-            'currency'       => get_woocommerce_currency(),
-            'consent'        => (bool) $consent,
-        ) );
-
-        return new WP_REST_Response( $result, 200 );
-    }
-
-    /**
-     * Register WooCommerce checkout field (WC 8.2+ Checkout Fields API)
-     */
-    public function register_checkout_field() {
-        if ( ! function_exists( 'woocommerce_register_additional_checkout_field' ) ) {
-            return;
-        }
-
-        if ( 'yes' !== Checkout_Rescuer::get_setting( 'require_consent', 'yes' ) ) {
-            return;
-        }
-
-        $text = Checkout_Rescuer::get_setting( 'consent_text', 'I agree to receive order updates via WhatsApp' );
-
-        woocommerce_register_additional_checkout_field( array(
-            'id'       => 'checkout-rescuer/consent',
-            'label'    => $text,
-            'location' => 'contact',
-            'type'     => 'checkbox',
-        ) );
-    }
-
-    /**
-     * Register WC Blocks integration
-     */
-    public function register_blocks_integration() {
-        // Blocks checkout will use the REST API and frontend JS
-    }
-
-    /**
-     * Enqueue scripts on checkout
+     * Enqueue frontend assets on checkout.
      */
     public function enqueue_scripts() {
-        // Load on checkout page (both classic and blocks)
-        if ( ! is_checkout() && ! has_block( 'woocommerce/checkout' ) ) {
-            // Also check if current page has checkout block
-            global $post;
-            if ( $post && ! has_block( 'woocommerce/checkout', $post ) ) {
-                return;
-            }
-        }
-
+        if ( ! function_exists( 'is_checkout' ) || ! is_checkout() ) return;
         if ( 'yes' !== Checkout_Rescuer::get_setting( 'enabled', 'yes' ) ) return;
 
         wp_enqueue_style( 'cr-public', CR_PLUGIN_URL . 'public/css/cr-public.css', array(), CR_VERSION );
@@ -125,34 +46,43 @@ class CR_Tracker {
 
         wp_localize_script( 'cr-public', 'crPublic', array(
             'ajaxUrl'        => admin_url( 'admin-ajax.php' ),
-            'restUrl'        => rest_url( 'checkout-rescuer/v1/track' ),
-            'restNonce'      => wp_create_nonce( 'wp_rest' ),
             'nonce'          => wp_create_nonce( 'cr_public_nonce' ),
-            'backendUrl'     => rtrim( Checkout_Rescuer::get_setting( 'backend_url', '' ), '/' ),
-            'storeUrl'       => home_url(),
             'requireConsent' => Checkout_Rescuer::get_setting( 'require_consent', 'yes' ),
             'countryCode'    => Checkout_Rescuer::get_setting( 'country_code', '+91' ),
             'consentText'    => Checkout_Rescuer::get_setting( 'consent_text', 'I agree to receive order updates via WhatsApp' ),
-            'isBlocksCheckout' => $this->is_blocks_checkout(),
         ) );
     }
 
+
     /**
-     * Check if current page uses blocks checkout
+     * Register consent as a WooCommerce additional checkout field (Blocks-compatible, WC 8.2+).
      */
-    private function is_blocks_checkout() {
-        global $post;
-        if ( $post && has_block( 'woocommerce/checkout', $post ) ) {
-            return true;
+    public function register_checkout_field() {
+        if ( ! function_exists( 'woocommerce_register_additional_checkout_field' ) ) return;
+        if ( 'yes' !== Checkout_Rescuer::get_setting( 'require_consent', 'yes' ) ) return;
+
+        $text = Checkout_Rescuer::get_setting( 'consent_text', 'I agree to receive order updates via WhatsApp' );
+
+        try {
+            woocommerce_register_additional_checkout_field( array(
+                'id'       => 'checkout-rescuer/consent',
+                'label'    => $text,
+                'location' => 'contact',
+                'type'     => 'checkbox',
+                'required' => false,
+            ) );
+        } catch ( Exception $e ) {
+            // Field already registered or unsupported - ignore.
         }
-        return false;
     }
 
     /**
-     * Classic checkout: Render consent checkbox
+     * Classic checkout: render consent checkbox below billing form.
      */
     public function render_consent() {
         if ( 'yes' !== Checkout_Rescuer::get_setting( 'require_consent', 'yes' ) ) return;
+        // Skip if Blocks checkout field API is active (avoids duplicate).
+        if ( function_exists( 'woocommerce_register_additional_checkout_field' ) && WC()->is_rest_api_request() ) return;
         $text = Checkout_Rescuer::get_setting( 'consent_text', 'I agree to receive order updates via WhatsApp' );
         ?>
         <div class="cr-consent-field" id="cr-consent-wrapper">
@@ -164,26 +94,105 @@ class CR_Tracker {
         <?php
     }
 
+
     /**
-     * AJAX: Track cart (classic checkout)
+     * SERVER-SIDE capture for CLASSIC checkout.
+     * Fires on AJAX order review update (every time fields change).
+     *
+     * @param string $post_data Serialized form data.
      */
-    public function ajax_track_cart() {
-        check_ajax_referer( 'cr_public_nonce', 'nonce' );
+    public function capture_classic( $post_data ) {
+        $data = array();
+        parse_str( $post_data, $data );
 
-        $phone   = sanitize_text_field( wp_unslash( $_POST['phone'] ?? '' ) );
-        $name    = sanitize_text_field( wp_unslash( $_POST['name'] ?? '' ) );
-        $email   = sanitize_email( wp_unslash( $_POST['email'] ?? '' ) );
-        $consent = absint( $_POST['consent'] ?? 0 );
+        $phone = sanitize_text_field( $data['billing_phone'] ?? '' );
+        if ( empty( $phone ) ) return;
 
+        $name  = trim( ( $data['billing_first_name'] ?? '' ) . ' ' . ( $data['billing_last_name'] ?? '' ) );
+        $email = sanitize_email( $data['billing_email'] ?? '' );
+
+        $consent = $this->resolve_consent( ! empty( $data['cr_consent'] ) );
+        $this->send_track( $phone, $name, $email, $consent );
+    }
+
+    /**
+     * SERVER-SIDE capture for BLOCKS checkout.
+     * Fires when the draft order is updated from the Store API request.
+     *
+     * @param WC_Order $order   Draft order.
+     * @param mixed    $request REST request.
+     */
+    public function capture_blocks( $order, $request ) {
+        if ( ! is_a( $order, 'WC_Order' ) ) return;
+
+        $phone = $order->get_billing_phone();
         if ( empty( $phone ) ) {
-            wp_send_json_error( array( 'message' => 'Phone required.' ) );
+            $phone = $order->get_shipping_phone();
         }
+        if ( empty( $phone ) ) return;
 
-        $cart_data  = $this->get_cart_data();
-        $session_id = $this->get_session_id();
+        $name  = trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() );
+        $email = $order->get_billing_email();
 
-        $result = CR_API::post( 'track/cart', array(
-            'session_id'     => $session_id,
+        $consent = $this->resolve_consent( $this->read_blocks_consent( $order ) );
+        $this->send_track( $phone, $name, $email, $consent );
+    }
+
+    /**
+     * Read the consent additional field value from a blocks order.
+     *
+     * @param WC_Order $order Order.
+     * @return bool
+     */
+    private function read_blocks_consent( $order ) {
+        $keys = array(
+            '_wc_other/checkout-rescuer/consent',
+            '_checkout-rescuer/consent',
+            'checkout-rescuer/consent',
+        );
+        foreach ( $keys as $key ) {
+            $val = $order->get_meta( $key );
+            if ( '' !== $val && null !== $val ) {
+                return ( '1' === (string) $val || 'true' === $val || 1 === $val || true === $val );
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Decide final consent value based on the require_consent setting.
+     *
+     * @param bool $checked Whether the consent box was checked.
+     * @return bool
+     */
+    private function resolve_consent( $checked ) {
+        // If consent is NOT required, track everyone.
+        if ( 'yes' !== Checkout_Rescuer::get_setting( 'require_consent', 'yes' ) ) {
+            return true;
+        }
+        return (bool) $checked;
+    }
+
+
+    /**
+     * Shared method: send cart data to backend.
+     *
+     * @param string $phone   Raw phone.
+     * @param string $name    Customer name.
+     * @param string $email   Customer email.
+     * @param bool   $consent Consent given.
+     */
+    private function send_track( $phone, $name, $email, $consent ) {
+        if ( 'yes' !== Checkout_Rescuer::get_setting( 'enabled', 'yes' ) ) return;
+
+        $cart_data = $this->get_cart_data();
+        if ( empty( $cart_data['items'] ) || $cart_data['total'] <= 0 ) return;
+
+        $phone = $this->format_phone( $phone );
+        if ( empty( $phone ) ) return;
+
+        CR_API::post( 'track/cart', array(
+            'session_id'     => $this->get_session_id(),
             'store_url'      => home_url(),
             'customer_name'  => $name,
             'customer_email' => $email,
@@ -193,25 +202,62 @@ class CR_Tracker {
             'currency'       => get_woocommerce_currency(),
             'consent'        => (bool) $consent,
         ) );
-
-        if ( ! empty( $result['success'] ) ) {
-            wp_send_json_success();
-        } else {
-            wp_send_json_error( array( 'message' => $result['error'] ?? 'Failed to track.' ) );
-        }
     }
 
     /**
-     * AJAX: Heartbeat
+     * Format phone to international format with country code.
+     *
+     * @param string $phone Raw phone.
+     * @return string
+     */
+    private function format_phone( $phone ) {
+        $phone  = trim( $phone );
+        $digits = preg_replace( '/\D/', '', $phone );
+        if ( strlen( $digits ) < 10 ) return '';
+
+        // Already has + prefix
+        if ( strpos( $phone, '+' ) === 0 ) {
+            return '+' . $digits;
+        }
+        // Starts with 00 (international)
+        if ( strpos( $digits, '00' ) === 0 ) {
+            return '+' . substr( $digits, 2 );
+        }
+        // Prepend configured country code
+        $cc = Checkout_Rescuer::get_setting( 'country_code', '+91' );
+        $cc_digits = preg_replace( '/\D/', '', $cc );
+        $local = ltrim( $digits, '0' );
+        return '+' . $cc_digits . $local;
+    }
+
+    /**
+     * AJAX: track cart (frontend JS backup).
+     */
+    public function ajax_track_cart() {
+        check_ajax_referer( 'cr_public_nonce', 'nonce' );
+
+        $phone   = sanitize_text_field( wp_unslash( $_POST['phone'] ?? '' ) );
+        $name    = sanitize_text_field( wp_unslash( $_POST['name'] ?? '' ) );
+        $email   = sanitize_email( wp_unslash( $_POST['email'] ?? '' ) );
+        $consent = $this->resolve_consent( ! empty( $_POST['consent'] ) );
+
+        if ( empty( $phone ) ) {
+            wp_send_json_error( array( 'message' => 'Phone required.' ) );
+        }
+
+        $this->send_track( $phone, $name, $email, $consent );
+        wp_send_json_success();
+    }
+
+    /**
+     * AJAX: heartbeat (keep cart fresh).
      */
     public function ajax_heartbeat() {
         check_ajax_referer( 'cr_public_nonce', 'nonce' );
 
-        $session_id = $this->get_session_id();
-        $cart_data  = $this->get_cart_data();
-
+        $cart_data = $this->get_cart_data();
         CR_API::post( 'track/heartbeat', array(
-            'session_id'    => $session_id,
+            'session_id'    => $this->get_session_id(),
             'cart_contents' => $cart_data['items'],
             'cart_total'    => $cart_data['total'],
         ) );
@@ -219,39 +265,41 @@ class CR_Tracker {
         wp_send_json_success();
     }
 
+
     /**
-     * Classic checkout: Order conversion
+     * Classic checkout: order placed -> mark converted.
      */
     public function mark_converted( $order_id, $posted_data, $order ) {
-        $session_id = $this->get_session_id();
-
         CR_API::post( 'track/converted', array(
-            'session_id'  => $session_id,
+            'session_id'  => $this->get_session_id(),
             'order_id'    => (string) $order_id,
             'order_total' => $order->get_total(),
         ) );
     }
 
     /**
-     * Blocks checkout: Order conversion (Store API)
+     * Blocks checkout: order placed -> mark converted.
      */
     public function mark_converted_blocks( $order ) {
-        $session_id = $this->get_session_id();
-
+        if ( ! is_a( $order, 'WC_Order' ) ) return;
         CR_API::post( 'track/converted', array(
-            'session_id'  => $session_id,
+            'session_id'  => $this->get_session_id(),
             'order_id'    => (string) $order->get_id(),
             'order_total' => $order->get_total(),
         ) );
     }
 
+    /**
+     * Get current cart items + total.
+     */
     private function get_cart_data() {
-        if ( ! WC()->cart ) {
+        if ( ! function_exists( 'WC' ) || ! WC()->cart ) {
             return array( 'items' => array(), 'total' => 0 );
         }
 
         $items = array();
         foreach ( WC()->cart->get_cart() as $item ) {
+            if ( empty( $item['data'] ) ) continue;
             $product = $item['data'];
             $items[] = array(
                 'product_id'   => $item['product_id'],
@@ -269,17 +317,21 @@ class CR_Tracker {
         );
     }
 
+    /**
+     * Get or create a stable session id.
+     */
     private function get_session_id() {
         if ( is_user_logged_in() ) {
             return 'user_' . get_current_user_id();
         }
-
         if ( ! empty( $_COOKIE['cr_session_id'] ) ) {
             return sanitize_text_field( $_COOKIE['cr_session_id'] );
         }
-
         $id = 'cr_' . wp_generate_password( 20, false );
-        setcookie( 'cr_session_id', $id, time() + WEEK_IN_SECONDS, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true );
+        if ( ! headers_sent() ) {
+            setcookie( 'cr_session_id', $id, time() + WEEK_IN_SECONDS, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true );
+        }
+        $_COOKIE['cr_session_id'] = $id;
         return $id;
     }
 }

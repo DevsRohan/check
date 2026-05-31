@@ -32,6 +32,7 @@ class CR_Admin {
         );
         add_submenu_page( 'checkout-rescuer', 'Dashboard', 'Dashboard', 'manage_woocommerce', 'checkout-rescuer', array( $this, 'render_app' ) );
         add_submenu_page( 'checkout-rescuer', 'Settings', 'Settings', 'manage_woocommerce', 'checkout-rescuer-settings', array( $this, 'render_app' ) );
+        add_submenu_page( 'checkout-rescuer', 'System Status', 'System Status', 'manage_woocommerce', 'checkout-rescuer-status', array( $this, 'render_status' ) );
     }
 
     public function enqueue_assets( $hook ) {
@@ -69,6 +70,43 @@ class CR_Admin {
                 <div class="cr-loader"></div>
                 <p>Loading Checkout Rescuer...</p>
             </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Render System Status / diagnostics page.
+     */
+    public function render_status() {
+        $checks = CR_Diagnostics::run_all();
+        $report = CR_Diagnostics::build_report( $checks );
+        ?>
+        <div class="wrap cr-status-wrap" style="max-width:900px;font-family:Inter,-apple-system,sans-serif;">
+            <h1 style="font-size:24px;font-weight:700;margin:20px 0 6px;">System Status</h1>
+            <p style="color:#64748b;margin:0 0 24px;">Health check for Checkout Rescuer. Send the report below for verification.</p>
+
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+                <?php foreach ( $checks as $c ) :
+                    $color = 'pass' === $c['status'] ? '#10b981' : ( 'warn' === $c['status'] ? '#f59e0b' : '#ef4444' );
+                    $bg    = 'pass' === $c['status'] ? '#ecfdf5' : ( 'warn' === $c['status'] ? '#fffbeb' : '#fef2f2' );
+                    $txt   = strtoupper( $c['status'] );
+                ?>
+                <div style="display:flex;align-items:center;gap:16px;padding:16px 20px;border-bottom:1px solid #f1f5f9;">
+                    <span style="flex-shrink:0;width:64px;text-align:center;font-size:11px;font-weight:700;color:<?php echo esc_attr( $color ); ?>;background:<?php echo esc_attr( $bg ); ?>;padding:5px 0;border-radius:6px;"><?php echo esc_html( $txt ); ?></span>
+                    <div style="flex:1;">
+                        <strong style="display:block;font-size:14px;color:#0f172a;"><?php echo esc_html( $c['label'] ); ?></strong>
+                        <span style="font-size:13px;color:#64748b;"><?php echo esc_html( $c['detail'] ); ?></span>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+
+            <h2 style="font-size:16px;font-weight:600;margin:28px 0 10px;">Copy-Paste Report</h2>
+            <textarea readonly onclick="this.select()" style="width:100%;height:300px;font-family:monospace;font-size:12px;line-height:1.6;padding:16px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;color:#334155;resize:vertical;"><?php echo esc_textarea( $report ); ?></textarea>
+
+            <p style="margin-top:16px;">
+                <a href="<?php echo esc_url( admin_url( 'admin.php?page=checkout-rescuer-status' ) ); ?>" class="button button-primary" style="background:#10b981;border-color:#10b981;">Re-run Checks</a>
+            </p>
         </div>
         <?php
     }
