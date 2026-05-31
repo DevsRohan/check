@@ -1,3 +1,12 @@
+---
+title: Checkout Rescuer
+emoji: 🛒
+colorFrom: green
+colorTo: emerald
+sdk: docker
+pinned: false
+---
+
 # Checkout Rescuer - Backend
 
 WhatsApp cart recovery backend for WooCommerce. Deploys on Hugging Face Spaces.
@@ -37,6 +46,7 @@ npm run dev
 - `POST /api/track/heartbeat` - Cart activity heartbeat
 - `POST /api/track/converted` - Mark cart as converted
 - `GET /api/carts` - List abandoned carts
+- `GET /api/carts/by-token/:token` - Get cart by recovery token
 - `GET /api/messages` - Message log
 - `GET /api/analytics/summary` - Dashboard stats
 - `GET /api/analytics/chart` - Chart data
