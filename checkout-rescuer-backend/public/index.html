@@ -65,14 +65,22 @@
 
   <script>
     function checkStatus() {
-      fetch('/api/whatsapp/status', { headers: { 'X-Api-Key': '' } })
+      fetch('/api/health')
         .then(r => r.json())
+        .then(function() {
+          // Health OK, now try status without auth (will work if no API key set)
+          return fetch('/api/whatsapp/status');
+        })
+        .then(r => {
+          if (!r.ok) throw new Error('Auth required');
+          return r.json();
+        })
         .then(data => {
           var card = document.getElementById('status-card');
           var wa = data.data || {};
 
           if (wa.status === 'connected') {
-            card.innerHTML = '<div class="connected">&#x2705;</div><h3>WhatsApp Connected</h3><p style="color:#94a3b8;margin:8px 0">' + (wa.info ? wa.info.name + ' (' + wa.info.phone + ')' : '') + '</p><span class="badge badge-success">Active</span>';
+            card.innerHTML = '<div class="connected">&#x2705;</div><h3>WhatsApp Connected</h3><p style="color:#94a3b8;margin:8px 0">' + escHtml(wa.info ? wa.info.name + ' (' + wa.info.phone + ')' : '') + '</p><span class="badge badge-success">Active</span>';
           } else if (wa.status === 'qr_ready' && wa.qrCode) {
             card.innerHTML = '<h3>Scan QR Code</h3><img src="' + wa.qrCode + '" class="qr-img" alt="QR"><p class="instruction">Open WhatsApp &gt; Linked Devices &gt; Link a Device</p>';
             setTimeout(checkStatus, 5000);
@@ -82,10 +90,10 @@
           }
         })
         .catch(function() {
-          document.getElementById('status-card').innerHTML = '<span class="badge badge-error">Backend starting...</span>';
-          setTimeout(checkStatus, 5000);
+          document.getElementById('status-card').innerHTML = '<span class="badge badge-success">Backend running</span><p class="instruction" style="margin-top:16px">Manage WhatsApp connection from your WordPress admin panel.</p>';
         });
     }
+    function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
     checkStatus();
   </script>
 </body>

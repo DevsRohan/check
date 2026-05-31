@@ -128,7 +128,7 @@ var CR = {
   renderWaBar: function(wa) {
     if (!wa) { $('#cr-wa-bar').html(''); return; }
     var dotClass = wa.status === 'connected' ? 'connected' : (wa.status === 'qr_ready' || wa.status === 'connecting') ? 'connecting' : 'disconnected';
-    var label = wa.status === 'connected' ? 'WhatsApp Connected' + (wa.info ? ' (' + wa.info.phone + ')' : '') : wa.status === 'qr_ready' ? 'Scan QR Code to connect' : 'WhatsApp Disconnected';
+    var label = wa.status === 'connected' ? 'WhatsApp Connected' + (wa.info ? ' (' + this.esc(wa.info.phone) + ')' : '') : wa.status === 'qr_ready' ? 'Scan QR Code to connect' : 'WhatsApp Disconnected';
     var sub = wa.status === 'connected' ? 'Messages are being delivered' : 'Go to WhatsApp tab to connect';
 
     $('#cr-wa-bar').html(
@@ -313,25 +313,25 @@ var CR = {
     this.pollWhatsApp();
     var self = this;
 
-    $(document).on('click', '#cr-test-btn', function() {
+    $(document).off('click', '#cr-test-btn').on('click', '#cr-test-btn', function() {
       var phone = $('#cr-test-phone').val();
       if (!phone) { self.toast('Enter phone number', 'error'); return; }
       $(this).prop('disabled', true).text('Sending...');
       $.post(crAdmin.ajaxUrl, { action: 'cr_test_message', nonce: crAdmin.nonce, phone: phone }, function(r) {
         $('#cr-test-btn').prop('disabled', false).text('Send Test');
-        if (r.success) { $('#cr-test-result').html('<span style="color:var(--cr-success)">&#x2705; ' + r.data + '</span>'); }
-        else { $('#cr-test-result').html('<span style="color:var(--cr-danger)">&#x274C; ' + (r.data||'Failed') + '</span>'); }
+        if (r.success) { $('#cr-test-result').html('<span style="color:var(--cr-success)">&#x2705; ' + self.esc(r.data) + '</span>'); }
+        else { $('#cr-test-result').html('<span style="color:var(--cr-danger)">&#x274C; ' + self.esc(r.data||'Failed') + '</span>'); }
       });
     });
 
-    $(document).on('click', '#cr-wa-disconnect', function() {
+    $(document).off('click', '#cr-wa-disconnect').on('click', '#cr-wa-disconnect', function() {
       $.post(crAdmin.ajaxUrl, { action: 'cr_disconnect_whatsapp', nonce: crAdmin.nonce }, function() {
         self.toast('Disconnected', 'success');
         self.pollWhatsApp();
       });
     });
 
-    $(document).on('click', '#cr-wa-restart', function() {
+    $(document).off('click', '#cr-wa-restart').on('click', '#cr-wa-restart', function() {
       $.post(crAdmin.ajaxUrl, { action: 'cr_restart_whatsapp', nonce: crAdmin.nonce }, function() {
         self.toast('Restarting...', 'success');
         setTimeout(function() { self.pollWhatsApp(); }, 3000);
@@ -353,7 +353,7 @@ var CR = {
         html = '<div style="text-align:center;padding:40px">' +
           '<div style="font-size:64px;margin-bottom:16px">&#x2705;</div>' +
           '<h2 style="color:var(--cr-success);margin-bottom:8px">WhatsApp Connected!</h2>' +
-          '<p style="color:var(--cr-text-muted);margin-bottom:8px">Logged in as: <strong>' + (wa.info ? wa.info.name + ' (' + wa.info.phone + ')' : 'Unknown') + '</strong></p>' +
+          '<p style="color:var(--cr-text-muted);margin-bottom:8px">Logged in as: <strong>' + (wa.info ? self.esc(wa.info.name) + ' (' + self.esc(wa.info.phone) + ')' : 'Unknown') + '</strong></p>' +
           '<p style="color:var(--cr-text-muted);margin-bottom:24px">Messages are being sent automatically to abandoned cart customers.</p>' +
           '<button class="cr-btn cr-btn-danger" id="cr-wa-disconnect">Disconnect</button>' +
         '</div>';
@@ -392,6 +392,7 @@ var CR = {
           '<div class="cr-field"><label class="cr-label">API Secret Key</label><input type="text" class="cr-input" name="api_key" value="' + this.esc(s.api_key||'') + '" placeholder="your-secret-key"></div>' +
           '<div class="cr-field"><label class="cr-label">Store Name</label><input type="text" class="cr-input" name="store_name" value="' + this.esc(s.store_name||'') + '"></div>' +
           '<div class="cr-field"><label class="cr-label">Default Country Code</label><input type="text" class="cr-input" name="country_code" value="' + this.esc(s.country_code||'+91') + '" style="max-width:120px"></div>' +
+          '<div class="cr-field"><label class="cr-label">Recovery Base URL</label><input type="text" class="cr-input" name="recovery_base_url" value="' + this.esc(s.recovery_base_url || s.backend_url || '') + '" placeholder="https://your-space.hf.space"><p class="cr-help">URL used in recovery links sent to customers. Usually same as Backend URL.</p></div>' +
         '</div>' +
         '<div class="cr-settings-section"><h3>Cart Recovery</h3>' +
           '<div class="cr-field"><label class="cr-label">Enable Recovery</label><label class="cr-toggle"><input type="checkbox" name="enabled" ' + (s.enabled!=='no'?'checked':'') + '><span class="cr-toggle-slider"></span></label></div>' +
@@ -441,7 +442,7 @@ var CR = {
   // === EVENT BINDINGS ===
   startWaPolling: function() {
     var self = this;
-    $(document).on('click', '.cr-resend', function() {
+    $(document).off('click', '.cr-resend').on('click', '.cr-resend', function() {
       var id = $(this).data('id');
       $(this).text('Sending...').prop('disabled', true);
       $.post(crAdmin.ajaxUrl, { action: 'cr_resend_message', nonce: crAdmin.nonce, cart_id: id }, function(r) {
@@ -451,7 +452,7 @@ var CR = {
       });
     });
 
-    $(document).on('click', '.cr-del-cart', function() {
+    $(document).off('click', '.cr-del-cart').on('click', '.cr-del-cart', function() {
       if (!confirm('Delete this cart?')) return;
       var id = $(this).data('id');
       $.post(crAdmin.ajaxUrl, { action: 'cr_delete_cart', nonce: crAdmin.nonce, cart_id: id }, function() {

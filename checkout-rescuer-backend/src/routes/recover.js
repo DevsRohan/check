@@ -23,22 +23,20 @@ async function handleRecovery(req, res) {
       return res.redirect('/recovery-expired.html');
     }
 
+    // Check if recovery link has expired (72 hours from abandonment)
+    if (cart.abandoned_at) {
+      const abandonedTime = new Date(cart.abandoned_at).getTime();
+      const expiryMs = 72 * 60 * 60 * 1000; // 72 hours
+      if (Date.now() - abandonedTime > expiryMs) {
+        return res.redirect('/recovery-expired.html');
+      }
+    }
+
     const now = new Date().toISOString();
 
-    // Mark as recovered
+    // Mark as recovered (analytics will be updated when order is actually placed via track/converted)
     db.prepare("UPDATE abandoned_carts SET status = 'recovered', recovered_at = ?, updated_at = ? WHERE id = ?")
       .run(now, now, cart.id);
-
-    // Update analytics
-    const today = now.split('T')[0];
-    const existing = db.prepare('SELECT id FROM analytics WHERE date = ?').get(today);
-    if (existing) {
-      db.prepare('UPDATE analytics SET carts_recovered = carts_recovered + 1, revenue_recovered = revenue_recovered + ? WHERE date = ?')
-        .run(cart.cart_total, today);
-    } else {
-      db.prepare('INSERT INTO analytics (date, carts_recovered, revenue_recovered) VALUES (?, 1, ?)')
-        .run(today, cart.cart_total);
-    }
 
     // Build WooCommerce cart restoration URL
     const cartItems = JSON.parse(cart.cart_contents || '[]');

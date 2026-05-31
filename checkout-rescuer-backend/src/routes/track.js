@@ -150,9 +150,14 @@ router.post('/converted', (req, res) => {
     }
 
     if (cart.status === 'abandoned' || cart.status === 'recovered') {
-      // This is a recovery!
-      db.prepare("UPDATE abandoned_carts SET status = 'recovered', recovered_at = ?, updated_at = ? WHERE id = ?")
-        .run(now, now, cart.id);
+      // This is a recovery! Update status only if not already recovered (avoid overwriting recovered_at)
+      if (cart.status === 'abandoned') {
+        db.prepare("UPDATE abandoned_carts SET status = 'recovered', recovered_at = ?, updated_at = ? WHERE id = ?")
+          .run(now, now, cart.id);
+      } else {
+        db.prepare("UPDATE abandoned_carts SET updated_at = ? WHERE id = ?")
+          .run(now, cart.id);
+      }
 
       // Record recovery
       db.prepare(`

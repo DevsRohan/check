@@ -82,13 +82,13 @@
         });
       }, 30000); // Every 30 seconds
 
-      // Send heartbeat on page leave
+      // Send heartbeat on page leave using synchronous XHR (sendBeacon doesn't support nonce verification)
       $(window).on('beforeunload', function() {
         if (self.saved) {
-          navigator.sendBeacon && navigator.sendBeacon(
-            crPublic.ajaxUrl,
-            new URLSearchParams({ action: 'cr_heartbeat', nonce: crPublic.nonce })
-          );
+          var xhr = new XMLHttpRequest();
+          xhr.open('POST', crPublic.ajaxUrl, false); // synchronous
+          xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+          xhr.send('action=cr_heartbeat&nonce=' + encodeURIComponent(crPublic.nonce));
         }
       });
     }

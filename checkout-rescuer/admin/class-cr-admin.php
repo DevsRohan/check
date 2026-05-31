@@ -170,6 +170,10 @@ class CR_Admin {
         }
 
         if ( ! empty( $remote ) ) {
+            // Auto-set recovery_base_url to backend_url if not provided
+            if ( empty( $remote['recovery_base_url'] ) && ! empty( $current['backend_url'] ) ) {
+                $remote['recovery_base_url'] = rtrim( $current['backend_url'], '/' );
+            }
             CR_API::post( 'settings', array( 'settings' => $remote ) );
         }
 
