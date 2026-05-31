@@ -1,91 +1,71 @@
 /**
  * Checkout Rescuer - Public Styles
- *
- * @package Checkout_Rescuer
  */
 
-/* Consent Field */
 .cr-consent-field {
-    margin: 16px 0;
-    padding: 12px 16px;
-    background: #f0fdf4;
-    border: 1px solid #bbf7d0;
-    border-radius: 8px;
+  margin: 16px 0;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.cr-consent-field:hover {
+  border-color: #86efac;
 }
 
 .cr-consent-label {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    cursor: pointer;
-    font-size: 14px;
-    line-height: 1.5;
-    color: #374151;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #374151;
 }
 
 .cr-consent-label input[type="checkbox"] {
-    margin-top: 3px;
-    width: 16px;
-    height: 16px;
-    accent-color: #10b981;
-    flex-shrink: 0;
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  accent-color: #10b981;
+  flex-shrink: 0;
+  cursor: pointer;
 }
 
 .cr-consent-text {
-    flex: 1;
+  flex: 1;
 }
 
-/* Welcome Back Banner */
 .cr-welcome-back {
-    margin: 0 0 24px;
-    padding: 16px 20px;
-    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-    border: 1px solid #6ee7b7;
-    border-radius: 12px;
-    animation: cr-slideDown 0.4s ease-out;
+  margin: 0 0 24px;
+  padding: 18px 22px;
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 1px solid #6ee7b7;
+  border-radius: 12px;
+  animation: cr-fadeSlide 0.5s ease-out;
 }
 
 .cr-welcome-back-content {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .cr-welcome-back-icon {
-    font-size: 24px;
-    flex-shrink: 0;
+  font-size: 28px;
+  flex-shrink: 0;
 }
 
 .cr-welcome-back-content p {
-    margin: 0;
-    font-size: 15px;
-    font-weight: 500;
-    color: #065f46;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: #065f46;
 }
 
-@keyframes cr-slideDown {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-    .cr-consent-field {
-        margin: 12px 0;
-        padding: 10px 12px;
-    }
-
-    .cr-welcome-back {
-        padding: 12px 16px;
-    }
-
-    .cr-welcome-back-content p {
-        font-size: 14px;
-    }
+@keyframes cr-fadeSlide {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
 }

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkout Rescuer - WhatsApp Connection</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      text-align: center;
+      padding: 40px;
+      max-width: 500px;
+    }
+    h1 { font-size: 28px; margin-bottom: 8px; }
+    .subtitle { color: #94a3b8; margin-bottom: 32px; }
+    .status-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 40px;
+      margin-bottom: 24px;
+    }
+    .qr-img {
+      max-width: 260px;
+      border-radius: 12px;
+      background: #fff;
+      padding: 16px;
+      margin: 16px auto;
+    }
+    .connected { color: #10b981; font-size: 48px; margin-bottom: 16px; }
+    .instruction { color: #94a3b8; font-size: 14px; margin-top: 16px; }
+    .badge {
+      display: inline-block;
+      padding: 6px 16px;
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .badge-success { background: rgba(16,185,129,0.15); color: #34d399; }
+    .badge-waiting { background: rgba(245,158,11,0.15); color: #fbbf24; }
+    .badge-error { background: rgba(239,68,68,0.15); color: #f87171; }
+    .loader { width: 32px; height: 32px; border: 3px solid #334155; border-top: 3px solid #10b981; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Checkout Rescuer</h1>
+    <p class="subtitle">WhatsApp Cart Recovery Backend</p>
+    <div class="status-card" id="status-card">
+      <div class="loader"></div>
+      <p>Checking connection status...</p>
+    </div>
+    <p class="instruction">This backend is managed from your WordPress admin panel.</p>
+  </div>
+
+  <script>
+    function checkStatus() {
+      fetch('/api/whatsapp/status', { headers: { 'X-Api-Key': '' } })
+        .then(r => r.json())
+        .then(data => {
+          var card = document.getElementById('status-card');
+          var wa = data.data || {};
+
+          if (wa.status === 'connected') {
+            card.innerHTML = '<div class="connected">&#x2705;</div><h3>WhatsApp Connected</h3><p style="color:#94a3b8;margin:8px 0">' + (wa.info ? wa.info.name + ' (' + wa.info.phone + ')' : '') + '</p><span class="badge badge-success">Active</span>';
+          } else if (wa.status === 'qr_ready' && wa.qrCode) {
+            card.innerHTML = '<h3>Scan QR Code</h3><img src="' + wa.qrCode + '" class="qr-img" alt="QR"><p class="instruction">Open WhatsApp &gt; Linked Devices &gt; Link a Device</p>';
+            setTimeout(checkStatus, 5000);
+          } else {
+            card.innerHTML = '<span class="badge badge-waiting">Waiting for connection...</span><p class="instruction" style="margin-top:16px">The QR code will appear shortly.</p>';
+            setTimeout(checkStatus, 3000);
+          }
+        })
+        .catch(function() {
+          document.getElementById('status-card').innerHTML = '<span class="badge badge-error">Backend starting...</span>';
+          setTimeout(checkStatus, 5000);
+        });
+    }
+    checkStatus();
+  </script>
+</body>
+</html>

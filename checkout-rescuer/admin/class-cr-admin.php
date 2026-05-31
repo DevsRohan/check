@@ -1,411 +1,223 @@
 <?php
 /**
- * Admin controller.
- *
- * @package Checkout_Rescuer
+ * Admin Controller - handles all admin functionality
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
-    exit;
-}
+if ( ! defined( 'ABSPATH' ) ) exit;
 
 class CR_Admin {
 
-    /**
-     * Initialize admin.
-     */
     public function init() {
-        add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
+        add_action( 'admin_menu', array( $this, 'add_menu' ) );
         add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
-        add_action( 'wp_ajax_cr_get_dashboard_data', array( $this, 'ajax_dashboard_data' ) );
+
+        // AJAX handlers
+        add_action( 'wp_ajax_cr_get_dashboard', array( $this, 'ajax_get_dashboard' ) );
+        add_action( 'wp_ajax_cr_get_carts', array( $this, 'ajax_get_carts' ) );
+        add_action( 'wp_ajax_cr_get_messages', array( $this, 'ajax_get_messages' ) );
+        add_action( 'wp_ajax_cr_get_whatsapp_status', array( $this, 'ajax_get_whatsapp_status' ) );
+        add_action( 'wp_ajax_cr_save_settings', array( $this, 'ajax_save_settings' ) );
         add_action( 'wp_ajax_cr_resend_message', array( $this, 'ajax_resend_message' ) );
         add_action( 'wp_ajax_cr_delete_cart', array( $this, 'ajax_delete_cart' ) );
-        add_action( 'wp_ajax_cr_save_settings', array( $this, 'ajax_save_settings' ) );
-        add_action( 'wp_ajax_cr_test_connection', array( $this, 'ajax_test_connection' ) );
-        add_action( 'wp_ajax_cr_complete_onboarding', array( $this, 'ajax_complete_onboarding' ) );
-
-        // Check onboarding
-        add_action( 'admin_init', array( $this, 'maybe_redirect_onboarding' ) );
+        add_action( 'wp_ajax_cr_test_message', array( $this, 'ajax_test_message' ) );
+        add_action( 'wp_ajax_cr_disconnect_whatsapp', array( $this, 'ajax_disconnect_whatsapp' ) );
+        add_action( 'wp_ajax_cr_restart_whatsapp', array( $this, 'ajax_restart_whatsapp' ) );
     }
 
-    /**
-     * Add admin menu items.
-     */
-    public function add_admin_menu() {
+    public function add_menu() {
         add_menu_page(
-            __( 'Checkout Rescuer', 'checkout-rescuer' ),
-            __( 'Cart Rescuer', 'checkout-rescuer' ),
-            'manage_woocommerce',
-            'checkout-rescuer',
-            array( $this, 'render_dashboard' ),
-            'dashicons-smartphone',
-            56
+            'Checkout Rescuer', 'Cart Rescuer', 'manage_woocommerce',
+            'checkout-rescuer', array( $this, 'render_app' ),
+            'dashicons-smartphone', 56
         );
-
-        add_submenu_page(
-            'checkout-rescuer',
-            __( 'Dashboard', 'checkout-rescuer' ),
-            __( 'Dashboard', 'checkout-rescuer' ),
-            'manage_woocommerce',
-            'checkout-rescuer',
-            array( $this, 'render_dashboard' )
-        );
-
-        add_submenu_page(
-            'checkout-rescuer',
-            __( 'Abandoned Carts', 'checkout-rescuer' ),
-            __( 'Abandoned Carts', 'checkout-rescuer' ),
-            'manage_woocommerce',
-            'checkout-rescuer-carts',
-            array( $this, 'render_carts' )
-        );
-
-        add_submenu_page(
-            'checkout-rescuer',
-            __( 'Messages', 'checkout-rescuer' ),
-            __( 'Messages', 'checkout-rescuer' ),
-            'manage_woocommerce',
-            'checkout-rescuer-messages',
-            array( $this, 'render_messages' )
-        );
-
-        add_submenu_page(
-            'checkout-rescuer',
-            __( 'Settings', 'checkout-rescuer' ),
-            __( 'Settings', 'checkout-rescuer' ),
-            'manage_woocommerce',
-            'checkout-rescuer-settings',
-            array( $this, 'render_settings' )
-        );
+        add_submenu_page( 'checkout-rescuer', 'Dashboard', 'Dashboard', 'manage_woocommerce', 'checkout-rescuer', array( $this, 'render_app' ) );
+        add_submenu_page( 'checkout-rescuer', 'Settings', 'Settings', 'manage_woocommerce', 'checkout-rescuer-settings', array( $this, 'render_app' ) );
     }
 
-    /**
-     * Enqueue admin assets.
-     *
-     * @param string $hook Current admin page hook.
-     */
     public function enqueue_assets( $hook ) {
-        $screens = array(
-            'toplevel_page_checkout-rescuer',
-            'cart-rescuer_page_checkout-rescuer-carts',
-            'cart-rescuer_page_checkout-rescuer-messages',
-            'cart-rescuer_page_checkout-rescuer-settings',
-        );
+        if ( strpos( $hook, 'checkout-rescuer' ) === false ) return;
 
-        if ( ! in_array( $hook, $screens, true ) ) {
-            return;
-        }
-
-        wp_enqueue_style(
-            'cr-admin',
-            CR_PLUGIN_URL . 'admin/css/cr-admin.css',
-            array(),
-            CR_VERSION
-        );
-
-        wp_enqueue_script(
-            'cr-admin',
-            CR_PLUGIN_URL . 'admin/js/cr-admin.js',
-            array( 'jquery' ),
-            CR_VERSION,
-            true
-        );
+        wp_enqueue_style( 'cr-admin', CR_PLUGIN_URL . 'admin/css/cr-admin.css', array(), CR_VERSION );
+        wp_enqueue_script( 'cr-admin', CR_PLUGIN_URL . 'admin/js/cr-admin.js', array( 'jquery' ), CR_VERSION, true );
 
         wp_localize_script( 'cr-admin', 'crAdmin', array(
-            'ajaxUrl'  => admin_url( 'admin-ajax.php' ),
-            'nonce'    => wp_create_nonce( 'cr_admin_nonce' ),
-            'currency' => get_woocommerce_currency_symbol(),
-            'strings'  => array(
-                'confirmDelete' => __( 'Are you sure you want to delete this cart?', 'checkout-rescuer' ),
-                'confirmResend' => __( 'Resend recovery message to this customer?', 'checkout-rescuer' ),
-                'saving'        => __( 'Saving...', 'checkout-rescuer' ),
-                'saved'         => __( 'Settings saved!', 'checkout-rescuer' ),
-                'error'         => __( 'An error occurred. Please try again.', 'checkout-rescuer' ),
-                'testing'       => __( 'Sending test message...', 'checkout-rescuer' ),
-                'testSuccess'   => __( 'Test message sent successfully!', 'checkout-rescuer' ),
-                'testFailed'    => __( 'Test message failed: ', 'checkout-rescuer' ),
-            ),
+            'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
+            'nonce'      => wp_create_nonce( 'cr_admin_nonce' ),
+            'backendUrl' => rtrim( Checkout_Rescuer::get_setting( 'backend_url', '' ), '/' ),
+            'apiKey'     => Checkout_Rescuer::get_setting( 'api_key', '' ),
+            'currency'   => get_woocommerce_currency_symbol(),
+            'settings'   => get_option( 'cr_settings', array() ),
+            'page'       => isset( $_GET['page'] ) ? sanitize_text_field( $_GET['page'] ) : 'checkout-rescuer',
         ) );
     }
 
     /**
-     * Redirect to onboarding if not complete.
+     * Render the single-page app shell
      */
-    public function maybe_redirect_onboarding() {
-        if ( ! current_user_can( 'manage_woocommerce' ) ) {
-            return;
-        }
-
-        $onboarding_complete = get_option( 'cr_onboarding_complete', false );
-        $current_page = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
-
-        if ( ! $onboarding_complete && strpos( $current_page, 'checkout-rescuer' ) === 0 && 'checkout-rescuer-onboarding' !== $current_page ) {
-            // Only redirect if accessing CR pages (not other admin pages)
-            if ( ! isset( $_GET['skip_onboarding'] ) ) {
-                wp_safe_redirect( admin_url( 'admin.php?page=checkout-rescuer-onboarding' ) );
-                exit;
-            }
-        }
-
-        // Register hidden onboarding page
-        add_submenu_page(
-            null,
-            __( 'Setup Wizard', 'checkout-rescuer' ),
-            '',
-            'manage_woocommerce',
-            'checkout-rescuer-onboarding',
-            array( $this, 'render_onboarding' )
-        );
+    public function render_app() {
+        ?>
+        <div id="cr-app" class="cr-app">
+            <div class="cr-loading-screen" id="cr-loading">
+                <div class="cr-loader"></div>
+                <p>Loading Checkout Rescuer...</p>
+            </div>
+        </div>
+        <?php
     }
 
-    /**
-     * Render dashboard page.
-     */
-    public function render_dashboard() {
-        include CR_PLUGIN_DIR . 'admin/views/dashboard.php';
-    }
+    // === AJAX HANDLERS ===
 
-    /**
-     * Render carts page.
-     */
-    public function render_carts() {
-        include CR_PLUGIN_DIR . 'admin/views/carts.php';
-    }
-
-    /**
-     * Render messages page.
-     */
-    public function render_messages() {
-        include CR_PLUGIN_DIR . 'admin/views/messages.php';
-    }
-
-    /**
-     * Render settings page.
-     */
-    public function render_settings() {
-        include CR_PLUGIN_DIR . 'admin/views/settings.php';
-    }
-
-    /**
-     * Render onboarding page.
-     */
-    public function render_onboarding() {
-        include CR_PLUGIN_DIR . 'admin/views/onboarding.php';
-    }
-
-    /**
-     * AJAX: Get dashboard data.
-     */
-    public function ajax_dashboard_data() {
+    public function ajax_get_dashboard() {
         check_ajax_referer( 'cr_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_woocommerce' ) ) wp_send_json_error( 'Unauthorized' );
 
-        if ( ! current_user_can( 'manage_woocommerce' ) ) {
-            wp_send_json_error( array( 'message' => 'Unauthorized.' ) );
-        }
+        $period = sanitize_text_field( $_POST['period'] ?? '30days' );
 
-        $period    = isset( $_POST['period'] ) ? sanitize_text_field( wp_unslash( $_POST['period'] ) ) : '30days';
-        $analytics = new CR_Analytics();
+        $summary = CR_API::get( 'analytics/summary', array( 'period' => $period ) );
+        $chart   = CR_API::get( 'analytics/chart', array( 'period' => $period ) );
+        $live    = CR_API::get( 'analytics/live' );
+        $wa      = CR_API::get( 'whatsapp/status' );
 
         wp_send_json_success( array(
-            'summary'   => $analytics->get_summary( $period ),
-            'chart'     => $analytics->get_chart_data( $period ),
-            'channels'  => $analytics->get_channel_breakdown( $period ),
+            'summary'  => $summary['data'] ?? array(),
+            'chart'    => $chart['data'] ?? array(),
+            'live'     => $live['data'] ?? array(),
+            'whatsapp' => $wa['data'] ?? array(),
         ) );
     }
 
-    /**
-     * AJAX: Resend recovery message.
-     */
-    public function ajax_resend_message() {
+    public function ajax_get_carts() {
         check_ajax_referer( 'cr_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_woocommerce' ) ) wp_send_json_error( 'Unauthorized' );
 
-        if ( ! current_user_can( 'manage_woocommerce' ) ) {
-            wp_send_json_error( array( 'message' => 'Unauthorized.' ) );
-        }
-
-        $cart_id = isset( $_POST['cart_id'] ) ? absint( $_POST['cart_id'] ) : 0;
-        if ( ! $cart_id ) {
-            wp_send_json_error( array( 'message' => 'Invalid cart ID.' ) );
-        }
-
-        global $wpdb;
-        $cart = $wpdb->get_row(
-            $wpdb->prepare(
-                "SELECT * FROM {$wpdb->prefix}cr_abandoned_carts WHERE id = %d AND status = 'abandoned'",
-                $cart_id
-            )
+        $params = array(
+            'status'   => sanitize_text_field( $_POST['status'] ?? 'abandoned' ),
+            'page'     => absint( $_POST['page'] ?? 1 ),
+            'per_page' => 20,
+            'search'   => sanitize_text_field( $_POST['search'] ?? '' ),
         );
 
-        if ( ! $cart ) {
-            wp_send_json_error( array( 'message' => 'Cart not found or not abandoned.' ) );
-        }
-
-        $messenger = new CR_Messenger();
-        $result    = $messenger->send_message( $cart, $cart->messages_sent + 1 );
-
-        if ( $result ) {
-            wp_send_json_success( array( 'message' => 'Message sent successfully.' ) );
-        } else {
-            wp_send_json_error( array( 'message' => 'Failed to send message. Check Twilio settings.' ) );
-        }
+        $result = CR_API::get( 'carts', $params );
+        wp_send_json_success( $result['data'] ?? array() );
     }
 
-    /**
-     * AJAX: Delete a cart record.
-     */
-    public function ajax_delete_cart() {
+    public function ajax_get_messages() {
         check_ajax_referer( 'cr_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_woocommerce' ) ) wp_send_json_error( 'Unauthorized' );
 
-        if ( ! current_user_can( 'manage_woocommerce' ) ) {
-            wp_send_json_error( array( 'message' => 'Unauthorized.' ) );
-        }
-
-        $cart_id = isset( $_POST['cart_id'] ) ? absint( $_POST['cart_id'] ) : 0;
-        if ( ! $cart_id ) {
-            wp_send_json_error( array( 'message' => 'Invalid cart ID.' ) );
-        }
-
-        global $wpdb;
-
-        // Delete related messages first
-        $wpdb->delete(
-            $wpdb->prefix . 'cr_messages',
-            array( 'cart_id' => $cart_id ),
-            array( '%d' )
+        $params = array(
+            'status'  => sanitize_text_field( $_POST['status'] ?? '' ),
+            'channel' => sanitize_text_field( $_POST['channel'] ?? '' ),
+            'page'    => absint( $_POST['page'] ?? 1 ),
         );
 
-        // Delete the cart
-        $wpdb->delete(
-            $wpdb->prefix . 'cr_abandoned_carts',
-            array( 'id' => $cart_id ),
-            array( '%d' )
-        );
+        $result = CR_API::get( 'messages', $params );
+        $stats  = CR_API::get( 'messages/stats' );
 
-        wp_send_json_success( array( 'message' => 'Cart deleted.' ) );
+        wp_send_json_success( array(
+            'messages' => $result['data'] ?? array(),
+            'stats'    => $stats['data'] ?? array(),
+        ) );
     }
 
-    /**
-     * AJAX: Save settings.
-     */
+    public function ajax_get_whatsapp_status() {
+        check_ajax_referer( 'cr_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_woocommerce' ) ) wp_send_json_error( 'Unauthorized' );
+
+        $result = CR_API::get( 'whatsapp/status' );
+        wp_send_json_success( $result['data'] ?? array() );
+    }
+
     public function ajax_save_settings() {
         check_ajax_referer( 'cr_admin_nonce', 'nonce' );
-
-        if ( ! current_user_can( 'manage_woocommerce' ) ) {
-            wp_send_json_error( array( 'message' => 'Unauthorized.' ) );
-        }
+        if ( ! current_user_can( 'manage_woocommerce' ) ) wp_send_json_error( 'Unauthorized' );
 
         $settings = isset( $_POST['settings'] ) ? wp_unslash( $_POST['settings'] ) : array();
+        if ( ! is_array( $settings ) ) wp_send_json_error( 'Invalid settings.' );
 
-        if ( empty( $settings ) || ! is_array( $settings ) ) {
-            wp_send_json_error( array( 'message' => 'No settings provided.' ) );
+        // Save local WP settings
+        $local_keys = array( 'backend_url', 'api_key', 'enabled', 'require_consent', 'consent_text', 'country_code' );
+        $current = get_option( 'cr_settings', array() );
+        foreach ( $local_keys as $key ) {
+            if ( isset( $settings[ $key ] ) ) {
+                $current[ $key ] = sanitize_text_field( $settings[ $key ] );
+            }
         }
+        update_option( 'cr_settings', $current );
 
-        // Sanitize each setting
-        $sanitized = array();
-        $allowed_keys = array(
-            'enabled', 'abandonment_timeout', 'primary_channel', 'fallback_to_sms',
-            'max_messages', 'message_1_delay', 'message_2_delay', 'enable_discount',
+        // Send remote settings to backend
+        $remote_keys = array(
+            'enabled', 'abandonment_timeout', 'max_messages',
+            'message_1_delay', 'message_2_delay', 'enable_discount',
             'discount_type', 'discount_amount', 'discount_message_step',
-            'message_template_1', 'message_template_2', 'phone_field_label',
-            'consent_text', 'require_consent', 'data_retention_days',
-            'track_guest_carts', 'country_code',
+            'message_template_1', 'message_template_2',
+            'require_consent', 'country_code', 'store_name', 'recovery_base_url',
         );
 
-        foreach ( $settings as $key => $value ) {
-            if ( ! in_array( $key, $allowed_keys, true ) ) {
-                continue;
-            }
-
-            switch ( $key ) {
-                case 'abandonment_timeout':
-                case 'max_messages':
-                case 'message_1_delay':
-                case 'message_2_delay':
-                case 'discount_amount':
-                case 'discount_message_step':
-                case 'data_retention_days':
-                    $sanitized[ $key ] = absint( $value );
-                    break;
-                case 'message_template_1':
-                case 'message_template_2':
-                case 'consent_text':
-                    $sanitized[ $key ] = sanitize_textarea_field( $value );
-                    break;
-                default:
-                    $sanitized[ $key ] = sanitize_text_field( $value );
-                    break;
+        $remote = array();
+        foreach ( $remote_keys as $key ) {
+            if ( isset( $settings[ $key ] ) ) {
+                $remote[ $key ] = $settings[ $key ];
             }
         }
 
-        $current = get_option( 'cr_settings', array() );
-        $updated = array_merge( $current, $sanitized );
-        update_option( 'cr_settings', $updated );
+        if ( ! empty( $remote ) ) {
+            CR_API::post( 'settings', array( 'settings' => $remote ) );
+        }
 
-        wp_send_json_success( array( 'message' => 'Settings saved.' ) );
+        wp_send_json_success( 'Settings saved.' );
     }
 
-    /**
-     * AJAX: Test Twilio connection.
-     */
-    public function ajax_test_connection() {
+    public function ajax_resend_message() {
         check_ajax_referer( 'cr_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_woocommerce' ) ) wp_send_json_error( 'Unauthorized' );
 
-        if ( ! current_user_can( 'manage_woocommerce' ) ) {
-            wp_send_json_error( array( 'message' => 'Unauthorized.' ) );
-        }
+        $cart_id = absint( $_POST['cart_id'] ?? 0 );
+        $result = CR_API::post( "carts/{$cart_id}/resend" );
 
-        $phone   = isset( $_POST['phone'] ) ? sanitize_text_field( wp_unslash( $_POST['phone'] ) ) : '';
-        $channel = isset( $_POST['channel'] ) ? sanitize_text_field( wp_unslash( $_POST['channel'] ) ) : 'whatsapp';
-
-        if ( empty( $phone ) ) {
-            wp_send_json_error( array( 'message' => 'Phone number is required.' ) );
-        }
-
-        $messenger = new CR_Messenger();
-        $result    = $messenger->send_test( $phone, $channel );
-
-        if ( $result['success'] ) {
-            wp_send_json_success( array( 'message' => 'Test message sent!' ) );
+        if ( ! empty( $result['success'] ) ) {
+            wp_send_json_success( $result['message'] ?? 'Sent.' );
         } else {
-            wp_send_json_error( array( 'message' => $result['error'] ) );
+            wp_send_json_error( $result['error'] ?? 'Failed.' );
         }
     }
 
-    /**
-     * AJAX: Complete onboarding.
-     */
-    public function ajax_complete_onboarding() {
+    public function ajax_delete_cart() {
         check_ajax_referer( 'cr_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_woocommerce' ) ) wp_send_json_error( 'Unauthorized' );
 
-        if ( ! current_user_can( 'manage_woocommerce' ) ) {
-            wp_send_json_error( array( 'message' => 'Unauthorized.' ) );
+        $cart_id = absint( $_POST['cart_id'] ?? 0 );
+        CR_API::delete( "carts/{$cart_id}" );
+        wp_send_json_success( 'Deleted.' );
+    }
+
+    public function ajax_test_message() {
+        check_ajax_referer( 'cr_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_woocommerce' ) ) wp_send_json_error( 'Unauthorized' );
+
+        $phone = sanitize_text_field( $_POST['phone'] ?? '' );
+        $result = CR_API::post( 'whatsapp/test', array( 'phone' => $phone ) );
+
+        if ( ! empty( $result['success'] ) ) {
+            wp_send_json_success( 'Test message sent!' );
+        } else {
+            wp_send_json_error( $result['error'] ?? 'Failed to send.' );
         }
+    }
 
-        // Save Twilio credentials (encrypted)
-        $sid      = isset( $_POST['twilio_sid'] ) ? sanitize_text_field( wp_unslash( $_POST['twilio_sid'] ) ) : '';
-        $token    = isset( $_POST['twilio_token'] ) ? sanitize_text_field( wp_unslash( $_POST['twilio_token'] ) ) : '';
-        $phone    = isset( $_POST['twilio_phone'] ) ? sanitize_text_field( wp_unslash( $_POST['twilio_phone'] ) ) : '';
-        $whatsapp = isset( $_POST['whatsapp_number'] ) ? sanitize_text_field( wp_unslash( $_POST['whatsapp_number'] ) ) : '';
+    public function ajax_disconnect_whatsapp() {
+        check_ajax_referer( 'cr_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_woocommerce' ) ) wp_send_json_error( 'Unauthorized' );
 
-        if ( empty( $sid ) || empty( $token ) ) {
-            wp_send_json_error( array( 'message' => 'Twilio SID and Token are required.' ) );
-        }
+        CR_API::post( 'whatsapp/disconnect' );
+        wp_send_json_success( 'Disconnected.' );
+    }
 
-        update_option( 'cr_twilio_sid', CR_Encryption::encrypt( $sid ) );
-        update_option( 'cr_twilio_token', CR_Encryption::encrypt( $token ) );
+    public function ajax_restart_whatsapp() {
+        check_ajax_referer( 'cr_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_woocommerce' ) ) wp_send_json_error( 'Unauthorized' );
 
-        if ( ! empty( $phone ) ) {
-            update_option( 'cr_twilio_phone', CR_Encryption::encrypt( $phone ) );
-        }
-        if ( ! empty( $whatsapp ) ) {
-            update_option( 'cr_whatsapp_number', CR_Encryption::encrypt( $whatsapp ) );
-        }
-
-        update_option( 'cr_onboarding_complete', true );
-
-        wp_send_json_success( array(
-            'message'  => 'Setup complete!',
-            'redirect' => admin_url( 'admin.php?page=checkout-rescuer' ),
-        ) );
+        CR_API::post( 'whatsapp/restart' );
+        wp_send_json_success( 'Restarting...' );
     }
 }

@@ -1,441 +1,495 @@
 /**
- * Checkout Rescuer - Admin JavaScript
- *
- * @package Checkout_Rescuer
+ * Checkout Rescuer - Admin SPA
+ * Premium Silicon Valley Dashboard
  */
-
 (function($) {
-    'use strict';
+'use strict';
 
-    var CRAdmin = {
+var CR = {
+  currentPage: 'dashboard',
+  waPolling: null,
 
-        init: function() {
-            this.bindDashboard();
-            this.bindCarts();
-            this.bindSettings();
-            this.bindOnboarding();
-            this.initChart();
-        },
+  init: function() {
+    this.currentPage = this.detectPage();
+    this.render();
+    this.startWaPolling();
+  },
 
-        // === Dashboard ===
-        bindDashboard: function() {
-            var self = this;
-            $('#cr-period-select').on('change', function() {
-                self.loadDashboardData($(this).val());
-            });
-        },
+  detectPage: function() {
+    var page = crAdmin.page || 'checkout-rescuer';
+    if (page === 'checkout-rescuer-settings') return 'settings';
+    return 'dashboard';
+  },
 
-        loadDashboardData: function(period) {
-            $.ajax({
-                url: crAdmin.ajaxUrl,
-                type: 'POST',
-                data: {
-                    action: 'cr_get_dashboard_data',
-                    nonce: crAdmin.nonce,
-                    period: period
-                },
-                success: function(response) {
-                    if (response.success) {
-                        var d = response.data.summary;
-                        $('#cr-stat-revenue').text(crAdmin.currency + CRAdmin.formatNumber(d.revenue_recovered));
-                        $('#cr-stat-rate').text(d.recovery_rate + '%');
-                        $('#cr-stat-recovered').text(d.recovered);
-                        $('#cr-stat-messages').text(d.messages_sent);
-                    }
-                }
-            });
-        },
+  render: function() {
+    var html = this.buildLayout();
+    $('#cr-app').html(html);
+    this.bindNav();
+    this.navigateTo(this.currentPage);
+  },
 
 
-        // === Carts Page ===
-        bindCarts: function() {
-            var self = this;
-
-            $(document).on('click', '.cr-resend-btn', function() {
-                var cartId = $(this).data('cart-id');
-                if (confirm(crAdmin.strings.confirmResend)) {
-                    self.resendMessage(cartId, $(this));
-                }
-            });
-
-            $(document).on('click', '.cr-delete-btn', function() {
-                var cartId = $(this).data('cart-id');
-                if (confirm(crAdmin.strings.confirmDelete)) {
-                    self.deleteCart(cartId, $(this));
-                }
-            });
-        },
-
-        resendMessage: function(cartId, $btn) {
-            $btn.prop('disabled', true);
-            $.ajax({
-                url: crAdmin.ajaxUrl,
-                type: 'POST',
-                data: {
-                    action: 'cr_resend_message',
-                    nonce: crAdmin.nonce,
-                    cart_id: cartId
-                },
-                success: function(response) {
-                    if (response.success) {
-                        CRAdmin.showToast(response.data.message, 'success');
-                    } else {
-                        CRAdmin.showToast(response.data.message, 'error');
-                    }
-                },
-                error: function() {
-                    CRAdmin.showToast(crAdmin.strings.error, 'error');
-                },
-                complete: function() {
-                    $btn.prop('disabled', false);
-                }
-            });
-        },
-
-        deleteCart: function(cartId, $btn) {
-            var $row = $btn.closest('tr');
-            $.ajax({
-                url: crAdmin.ajaxUrl,
-                type: 'POST',
-                data: {
-                    action: 'cr_delete_cart',
-                    nonce: crAdmin.nonce,
-                    cart_id: cartId
-                },
-                success: function(response) {
-                    if (response.success) {
-                        $row.fadeOut(300, function() { $(this).remove(); });
-                        CRAdmin.showToast('Cart deleted.', 'success');
-                    } else {
-                        CRAdmin.showToast(response.data.message, 'error');
-                    }
-                }
-            });
-        },
+  buildLayout: function() {
+    return '<div class="cr-layout">' +
+      '<aside class="cr-sidebar">' +
+        '<div class="cr-sidebar-brand"><h2><span class="cr-brand-icon">&#x1F4F1;</span>Checkout Rescuer</h2></div>' +
+        '<nav class="cr-sidebar-nav">' +
+          '<div class="cr-nav-section">Main</div>' +
+          '<a class="cr-nav-item active" data-page="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Dashboard</a>' +
+          '<a class="cr-nav-item" data-page="carts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>Abandoned Carts</a>' +
+          '<a class="cr-nav-item" data-page="messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Messages</a>' +
+          '<div class="cr-nav-section">Configuration</div>' +
+          '<a class="cr-nav-item" data-page="whatsapp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>WhatsApp</a>' +
+          '<a class="cr-nav-item" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15 1.65 1.65 0 003.17 14H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68 1.65 1.65 0 0010 3.17V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.17.59.56 1.08 1.08 1.24h.09a2 2 0 010 4h-.09c-.59.17-1.08.56-1.08 1.08z"/></svg>Settings</a>' +
+        '</nav>' +
+      '</aside>' +
+      '<main class="cr-main" id="cr-content"></main>' +
+    '</div>';
+  },
 
 
-        // === Settings Page ===
-        bindSettings: function() {
-            var self = this;
+  bindNav: function() {
+    var self = this;
+    $(document).on('click', '.cr-nav-item', function(e) {
+      e.preventDefault();
+      var page = $(this).data('page');
+      self.navigateTo(page);
+    });
+  },
 
-            $('#cr-save-settings').on('click', function() {
-                self.saveSettings($(this));
-            });
+  navigateTo: function(page) {
+    this.currentPage = page;
+    $('.cr-nav-item').removeClass('active');
+    $('.cr-nav-item[data-page="' + page + '"]').addClass('active');
 
-            $('#cr-send-test').on('click', function() {
-                self.sendTestMessage();
-            });
-        },
+    switch(page) {
+      case 'dashboard': this.renderDashboard(); break;
+      case 'carts': this.renderCarts(); break;
+      case 'messages': this.renderMessages(); break;
+      case 'whatsapp': this.renderWhatsApp(); break;
+      case 'settings': this.renderSettings(); break;
+    }
+  },
 
-        saveSettings: function($btn) {
-            var settings = {};
-            var $app = $('#cr-settings');
+  // === DASHBOARD ===
+  renderDashboard: function() {
+    var $c = $('#cr-content');
+    $c.html(
+      '<div class="cr-page-header"><div><h1 class="cr-page-title">Dashboard</h1><p class="cr-page-subtitle">Your cart recovery performance</p></div>' +
+      '<select class="cr-period-select" id="cr-period"><option value="7days">Last 7 Days</option><option value="30days" selected>Last 30 Days</option><option value="90days">Last 90 Days</option><option value="all">All Time</option></select></div>' +
+      '<div id="cr-wa-bar"></div>' +
+      '<div class="cr-stats-grid" id="cr-stats">Loading...</div>' +
+      '<div id="cr-live-bar"></div>' +
+      '<div class="cr-card"><div class="cr-card-header"><h3>Recovery Trend</h3></div><div class="cr-card-body"><div class="cr-chart-container"><canvas id="cr-chart"></canvas></div></div></div>' +
+      '<div class="cr-two-col" id="cr-dashboard-tables"></div>'
+    );
 
-            $app.find('input[name], select[name], textarea[name]').each(function() {
-                var $el = $(this);
-                var name = $el.attr('name');
-                if ($el.attr('type') === 'checkbox') {
-                    settings[name] = $el.is(':checked') ? 'yes' : 'no';
-                } else {
-                    settings[name] = $el.val();
-                }
-            });
+    this.loadDashboard('30days');
+    var self = this;
+    $('#cr-period').on('change', function() { self.loadDashboard($(this).val()); });
+  },
 
-            $btn.text(crAdmin.strings.saving).prop('disabled', true);
-
-            $.ajax({
-                url: crAdmin.ajaxUrl,
-                type: 'POST',
-                data: {
-                    action: 'cr_save_settings',
-                    nonce: crAdmin.nonce,
-                    settings: settings
-                },
-                success: function(response) {
-                    if (response.success) {
-                        CRAdmin.showToast(crAdmin.strings.saved, 'success');
-                    } else {
-                        CRAdmin.showToast(response.data.message, 'error');
-                    }
-                },
-                error: function() {
-                    CRAdmin.showToast(crAdmin.strings.error, 'error');
-                },
-                complete: function() {
-                    $btn.text('Save Settings').prop('disabled', false);
-                }
-            });
-        },
-
-        sendTestMessage: function() {
-            var phone = $('#cr-test-phone').val();
-            var channel = $('#cr-test-channel').val();
-            var $result = $('#cr-test-result');
-
-            if (!phone) {
-                $result.show().removeClass('cr-result-success').addClass('cr-result-error').text('Please enter a phone number.');
-                return;
-            }
-
-            $result.show().removeClass('cr-result-success cr-result-error').text(crAdmin.strings.testing);
-
-            $.ajax({
-                url: crAdmin.ajaxUrl,
-                type: 'POST',
-                data: {
-                    action: 'cr_test_connection',
-                    nonce: crAdmin.nonce,
-                    phone: phone,
-                    channel: channel
-                },
-                success: function(response) {
-                    if (response.success) {
-                        $result.removeClass('cr-result-error').addClass('cr-result-success').text(crAdmin.strings.testSuccess);
-                    } else {
-                        $result.removeClass('cr-result-success').addClass('cr-result-error').text(crAdmin.strings.testFailed + response.data.message);
-                    }
-                },
-                error: function() {
-                    $result.removeClass('cr-result-success').addClass('cr-result-error').text(crAdmin.strings.error);
-                }
-            });
-        },
+  loadDashboard: function(period) {
+    var self = this;
+    $.post(crAdmin.ajaxUrl, { action: 'cr_get_dashboard', nonce: crAdmin.nonce, period: period }, function(r) {
+      if (!r.success) return;
+      var d = r.data;
+      self.renderStats(d.summary);
+      self.renderLiveBar(d.live);
+      self.renderChart(d.chart);
+      self.renderWaBar(d.whatsapp);
+    });
+  },
 
 
-        // === Onboarding ===
-        bindOnboarding: function() {
-            var self = this;
-            var currentStep = 1;
+  renderStats: function(s) {
+    if (!s) s = {};
+    var cur = crAdmin.currency;
+    $('#cr-stats').html(
+      '<div class="cr-stat-card cr-stat-revenue"><div class="cr-stat-label">Revenue Recovered</div><div class="cr-stat-value">' + cur + this.fmt(s.revenue_recovered||0) + '</div></div>' +
+      '<div class="cr-stat-card cr-stat-rate"><div class="cr-stat-label">Recovery Rate</div><div class="cr-stat-value">' + (s.recovery_rate||0) + '%</div></div>' +
+      '<div class="cr-stat-card cr-stat-carts"><div class="cr-stat-label">Carts Recovered</div><div class="cr-stat-value">' + (s.recovered||0) + '</div></div>' +
+      '<div class="cr-stat-card cr-stat-messages"><div class="cr-stat-label">Messages Sent</div><div class="cr-stat-value">' + (s.messages_sent||0) + '</div></div>'
+    );
+  },
 
-            $(document).on('click', '.cr-next-step', function() {
-                currentStep++;
-                self.goToStep(currentStep);
-            });
+  renderLiveBar: function(l) {
+    if (!l) return;
+    var cur = crAdmin.currency;
+    $('#cr-live-bar').html(
+      '<div class="cr-live-bar">' +
+        '<div class="cr-live-item"><span class="cr-live-dot cr-live-dot-green"></span>' + (l.active_carts||0) + ' active carts</div>' +
+        '<div class="cr-live-item"><span class="cr-live-dot cr-live-dot-yellow"></span>' + (l.abandoned_carts||0) + ' awaiting recovery</div>' +
+        '<div class="cr-live-item"><span class="cr-live-dot cr-live-dot-red"></span>' + cur + this.fmt(l.pending_value||0) + ' recoverable</div>' +
+      '</div>'
+    );
+  },
 
-            $(document).on('click', '.cr-prev-step', function() {
-                currentStep--;
-                self.goToStep(currentStep);
-            });
+  renderWaBar: function(wa) {
+    if (!wa) { $('#cr-wa-bar').html(''); return; }
+    var dotClass = wa.status === 'connected' ? 'connected' : (wa.status === 'qr_ready' || wa.status === 'connecting') ? 'connecting' : 'disconnected';
+    var label = wa.status === 'connected' ? 'WhatsApp Connected' + (wa.info ? ' (' + wa.info.phone + ')' : '') : wa.status === 'qr_ready' ? 'Scan QR Code to connect' : 'WhatsApp Disconnected';
+    var sub = wa.status === 'connected' ? 'Messages are being delivered' : 'Go to WhatsApp tab to connect';
 
-            $('#cr-ob-test-btn').on('click', function() {
-                self.onboardingTest();
-            });
-
-            $('#cr-ob-complete').on('click', function() {
-                self.completeOnboarding();
-            });
-        },
-
-        goToStep: function(step) {
-            $('.cr-onboarding-step').removeClass('cr-step-active');
-            $('[data-step="' + step + '"]').filter('.cr-onboarding-step').addClass('cr-step-active');
-
-            // Update progress dots
-            $('.cr-progress-dot').each(function() {
-                var dotStep = $(this).closest('.cr-progress-step').data('step');
-                $(this).removeClass('cr-progress-dot-active cr-progress-dot-done');
-                if (dotStep === step) {
-                    $(this).addClass('cr-progress-dot-active');
-                } else if (dotStep < step) {
-                    $(this).addClass('cr-progress-dot-done');
-                }
-            });
-        },
-
-        onboardingTest: function() {
-            var phone = $('#cr-ob-test-phone').val();
-            var $result = $('#cr-ob-test-result');
-
-            if (!phone) {
-                $result.show().text('Enter your phone number first.').addClass('cr-result-error');
-                return;
-            }
-
-            // First save credentials temporarily
-            var sid = $('#cr-ob-sid').val();
-            var token = $('#cr-ob-token').val();
-
-            if (!sid || !token) {
-                $result.show().text('Please enter Twilio credentials in Step 2.').addClass('cr-result-error');
-                return;
-            }
-
-            $result.show().removeClass('cr-result-success cr-result-error').text('Saving credentials and sending test...');
-
-            // Save first, then test
-            $.ajax({
-                url: crAdmin.ajaxUrl,
-                type: 'POST',
-                data: {
-                    action: 'cr_complete_onboarding',
-                    nonce: crAdmin.nonce,
-                    twilio_sid: sid,
-                    twilio_token: token,
-                    twilio_phone: $('#cr-ob-phone').val(),
-                    whatsapp_number: $('#cr-ob-whatsapp').val()
-                },
-                success: function() {
-                    // Now send test
-                    $.ajax({
-                        url: crAdmin.ajaxUrl,
-                        type: 'POST',
-                        data: {
-                            action: 'cr_test_connection',
-                            nonce: crAdmin.nonce,
-                            phone: phone,
-                            channel: 'whatsapp'
-                        },
-                        success: function(response) {
-                            if (response.success) {
-                                $result.removeClass('cr-result-error').addClass('cr-result-success').text('Test message sent! Check your phone.');
-                            } else {
-                                $result.removeClass('cr-result-success').addClass('cr-result-error').text('Failed: ' + response.data.message);
-                            }
-                        }
-                    });
-                }
-            });
-        },
-
-        completeOnboarding: function() {
-            var sid = $('#cr-ob-sid').val();
-            var token = $('#cr-ob-token').val();
-            var phone = $('#cr-ob-phone').val();
-            var whatsapp = $('#cr-ob-whatsapp').val();
-
-            if (!sid || !token) {
-                CRAdmin.showToast('Twilio SID and Token are required.', 'error');
-                return;
-            }
-
-            $.ajax({
-                url: crAdmin.ajaxUrl,
-                type: 'POST',
-                data: {
-                    action: 'cr_complete_onboarding',
-                    nonce: crAdmin.nonce,
-                    twilio_sid: sid,
-                    twilio_token: token,
-                    twilio_phone: phone,
-                    whatsapp_number: whatsapp
-                },
-                success: function(response) {
-                    if (response.success) {
-                        CRAdmin.showToast('Setup complete! Redirecting...', 'success');
-                        setTimeout(function() {
-                            window.location.href = response.data.redirect;
-                        }, 1500);
-                    } else {
-                        CRAdmin.showToast(response.data.message, 'error');
-                    }
-                }
-            });
-        },
+    $('#cr-wa-bar').html(
+      '<div class="cr-wa-status"><span class="cr-wa-dot ' + dotClass + '"></span><div class="cr-wa-info"><strong>' + label + '</strong><span>' + sub + '</span></div></div>'
+    );
+  },
 
 
-        // === Chart ===
-        initChart: function() {
-            var $canvas = $('#cr-recovery-chart');
-            if (!$canvas.length || typeof crChartData === 'undefined') {
-                return;
-            }
+  renderChart: function(data) {
+    var canvas = document.getElementById('cr-chart');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    canvas.width = canvas.offsetWidth * 2;
+    canvas.height = 520;
 
-            var ctx = $canvas[0].getContext('2d');
-            var data = crChartData;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Simple canvas chart (no external dependency)
-            this.drawChart(ctx, $canvas[0], data);
-        },
+    if (!data || !data.labels || !data.labels.length) {
+      ctx.font = '14px Inter, sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.textAlign = 'center';
+      ctx.fillText('Chart data will appear once carts are tracked.', canvas.width/2, canvas.height/2);
+      return;
+    }
 
-        drawChart: function(ctx, canvas, data) {
-            if (!data.labels || !data.labels.length) {
-                ctx.font = '14px Inter, sans-serif';
-                ctx.fillStyle = '#64748b';
-                ctx.textAlign = 'center';
-                ctx.fillText('No data available yet. Charts will appear once carts are tracked.', canvas.width / 2, canvas.height / 2);
-                return;
-            }
+    var w = canvas.width, h = canvas.height;
+    var pad = { top: 30, right: 30, bottom: 50, left: 60 };
+    var cw = w - pad.left - pad.right;
+    var ch = h - pad.top - pad.bottom;
+    var max = Math.max.apply(null, data.revenue.concat([100]));
+    var step = cw / (data.labels.length - 1 || 1);
 
-            var width = canvas.width = canvas.offsetWidth * 2;
-            var height = canvas.height = 560;
-            ctx.scale(1, 1);
+    // Grid
+    ctx.strokeStyle = '#334155'; ctx.lineWidth = 1;
+    for (var i = 0; i <= 4; i++) {
+      var y = pad.top + (ch/4)*i;
+      ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w-pad.right, y); ctx.stroke();
+    }
 
-            var padding = { top: 40, right: 40, bottom: 60, left: 70 };
-            var chartW = width - padding.left - padding.right;
-            var chartH = height - padding.top - padding.bottom;
+    // Area fill
+    ctx.beginPath();
+    ctx.moveTo(pad.left, pad.top + ch);
+    for (var j = 0; j < data.revenue.length; j++) {
+      ctx.lineTo(pad.left + step*j, pad.top + ch - (data.revenue[j]/max*ch));
+    }
+    ctx.lineTo(pad.left + step*(data.revenue.length-1), pad.top + ch);
+    ctx.closePath();
+    var grad = ctx.createLinearGradient(0, pad.top, 0, pad.top+ch);
+    grad.addColorStop(0, 'rgba(16,185,129,0.2)');
+    grad.addColorStop(1, 'rgba(16,185,129,0.01)');
+    ctx.fillStyle = grad; ctx.fill();
 
-            var maxVal = Math.max.apply(null, data.revenue.concat([100]));
-            var stepX = chartW / (data.labels.length - 1 || 1);
+    // Line
+    ctx.beginPath(); ctx.strokeStyle = '#10b981'; ctx.lineWidth = 3;
+    for (var k = 0; k < data.revenue.length; k++) {
+      var xk = pad.left + step*k, yk = pad.top + ch - (data.revenue[k]/max*ch);
+      k === 0 ? ctx.moveTo(xk, yk) : ctx.lineTo(xk, yk);
+    }
+    ctx.stroke();
 
-            // Grid lines
-            ctx.strokeStyle = '#f1f5f9';
-            ctx.lineWidth = 1;
-            for (var i = 0; i <= 5; i++) {
-                var y = padding.top + (chartH / 5) * i;
-                ctx.beginPath();
-                ctx.moveTo(padding.left, y);
-                ctx.lineTo(width - padding.right, y);
-                ctx.stroke();
-            }
+    // Dots
+    ctx.fillStyle = '#10b981';
+    for (var d = 0; d < data.revenue.length; d++) {
+      ctx.beginPath();
+      ctx.arc(pad.left + step*d, pad.top + ch - (data.revenue[d]/max*ch), 4, 0, Math.PI*2);
+      ctx.fill();
+    }
 
-            // Revenue area
-            ctx.beginPath();
-            ctx.moveTo(padding.left, padding.top + chartH);
-            for (var j = 0; j < data.revenue.length; j++) {
-                var x = padding.left + stepX * j;
-                var yVal = padding.top + chartH - (data.revenue[j] / maxVal * chartH);
-                if (j === 0) ctx.lineTo(x, yVal);
-                else ctx.lineTo(x, yVal);
-            }
-            ctx.lineTo(padding.left + stepX * (data.revenue.length - 1), padding.top + chartH);
-            ctx.closePath();
-
-            var gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartH);
-            gradient.addColorStop(0, 'rgba(16, 185, 129, 0.15)');
-            gradient.addColorStop(1, 'rgba(16, 185, 129, 0.01)');
-            ctx.fillStyle = gradient;
-            ctx.fill();
-
-            // Revenue line
-            ctx.beginPath();
-            ctx.strokeStyle = '#10b981';
-            ctx.lineWidth = 3;
-            for (var k = 0; k < data.revenue.length; k++) {
-                var xk = padding.left + stepX * k;
-                var yk = padding.top + chartH - (data.revenue[k] / maxVal * chartH);
-                if (k === 0) ctx.moveTo(xk, yk);
-                else ctx.lineTo(xk, yk);
-            }
-            ctx.stroke();
-
-            // X-axis labels
-            ctx.font = '20px Inter, sans-serif';
-            ctx.fillStyle = '#64748b';
-            ctx.textAlign = 'center';
-            var labelInterval = Math.ceil(data.labels.length / 10);
-            for (var l = 0; l < data.labels.length; l += labelInterval) {
-                var xl = padding.left + stepX * l;
-                ctx.fillText(data.labels[l], xl, height - 20);
-            }
-        },
+    // Labels
+    ctx.font = '20px Inter'; ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center';
+    var interval = Math.max(1, Math.ceil(data.labels.length / 8));
+    for (var l = 0; l < data.labels.length; l += interval) {
+      ctx.fillText(data.labels[l], pad.left + step*l, h - 15);
+    }
+  },
 
 
-        // === Utilities ===
-        formatNumber: function(num) {
-            return parseFloat(num).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        },
+  // === CARTS PAGE ===
+  renderCarts: function() {
+    var $c = $('#cr-content');
+    $c.html(
+      '<div class="cr-page-header"><div><h1 class="cr-page-title">Abandoned Carts</h1><p class="cr-page-subtitle">Manage and recover abandoned carts</p></div></div>' +
+      '<div class="cr-filters"><div class="cr-filter-tabs" id="cr-cart-tabs">' +
+        '<button class="cr-tab active" data-status="abandoned">Abandoned</button>' +
+        '<button class="cr-tab" data-status="recovered">Recovered</button>' +
+        '<button class="cr-tab" data-status="active">Active</button>' +
+        '<button class="cr-tab" data-status="all">All</button>' +
+      '</div></div>' +
+      '<div class="cr-card"><div class="cr-card-body-flush" id="cr-carts-table"></div></div>'
+    );
 
-        showToast: function(message, type) {
-            var $toast = $('<div class="cr-toast cr-toast-' + type + '">' + message + '</div>');
-            $('body').append($toast);
-            setTimeout(function() {
-                $toast.fadeOut(300, function() { $(this).remove(); });
-            }, 3500);
-        }
-    };
+    var self = this;
+    this.loadCarts('abandoned');
+    $(document).on('click', '#cr-cart-tabs .cr-tab', function() {
+      $('#cr-cart-tabs .cr-tab').removeClass('active');
+      $(this).addClass('active');
+      self.loadCarts($(this).data('status'));
+    });
+  },
 
-    $(document).ready(function() {
-        CRAdmin.init();
+  loadCarts: function(status) {
+    var self = this;
+    $.post(crAdmin.ajaxUrl, { action: 'cr_get_carts', nonce: crAdmin.nonce, status: status }, function(r) {
+      if (!r.success || !r.data) { $('#cr-carts-table').html('<div class="cr-empty"><h3>No carts found</h3></div>'); return; }
+      var items = r.data.items || [];
+      if (!items.length) { $('#cr-carts-table').html('<div class="cr-empty"><h3>No carts in this status</h3><p>Abandoned carts will appear here once detected.</p></div>'); return; }
+
+      var html = '<table class="cr-table"><thead><tr><th>Customer</th><th>Value</th><th>Items</th><th>Messages</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+      for (var i = 0; i < items.length; i++) {
+        var c = items[i];
+        var itemCount = (c.cart_contents || []).length;
+        var badge = self.statusBadge(c.status);
+        html += '<tr><td><strong>' + self.esc(c.customer_name || 'Guest') + '</strong><br><small style="color:var(--cr-text-muted)">' + self.esc(c.customer_email||'') + '</small></td>';
+        html += '<td><strong>' + crAdmin.currency + parseFloat(c.cart_total).toFixed(2) + '</strong></td>';
+        html += '<td>' + itemCount + ' items</td>';
+        html += '<td><span class="cr-badge cr-badge-info">' + c.messages_sent + ' sent</span></td>';
+        html += '<td>' + badge + '</td>';
+        html += '<td><button class="cr-btn cr-btn-sm cr-btn-primary cr-resend" data-id="' + c.id + '">Resend</button> ';
+        html += '<button class="cr-btn cr-btn-sm cr-btn-danger cr-del-cart" data-id="' + c.id + '">Delete</button></td></tr>';
+      }
+      html += '</tbody></table>';
+      $('#cr-carts-table').html(html);
+    });
+  },
+
+
+  // === MESSAGES PAGE ===
+  renderMessages: function() {
+    var $c = $('#cr-content');
+    $c.html(
+      '<div class="cr-page-header"><div><h1 class="cr-page-title">Messages</h1><p class="cr-page-subtitle">Message delivery log</p></div></div>' +
+      '<div class="cr-stats-grid" id="cr-msg-stats"></div>' +
+      '<div class="cr-card"><div class="cr-card-body-flush" id="cr-msg-table"></div></div>'
+    );
+    this.loadMessages();
+  },
+
+  loadMessages: function() {
+    var self = this;
+    $.post(crAdmin.ajaxUrl, { action: 'cr_get_messages', nonce: crAdmin.nonce }, function(r) {
+      if (!r.success) return;
+      var stats = r.data.stats || {};
+      var msgs = (r.data.messages && r.data.messages.items) || [];
+
+      $('#cr-msg-stats').html(
+        '<div class="cr-stat-card"><div class="cr-stat-label">Sent</div><div class="cr-stat-value">' + (stats.sent||0) + '</div></div>' +
+        '<div class="cr-stat-card"><div class="cr-stat-label">Delivered</div><div class="cr-stat-value">' + (stats.delivered||0) + '</div></div>' +
+        '<div class="cr-stat-card"><div class="cr-stat-label">Read</div><div class="cr-stat-value">' + (stats.read_count||0) + '</div></div>' +
+        '<div class="cr-stat-card"><div class="cr-stat-label">Failed</div><div class="cr-stat-value" style="color:var(--cr-danger)">' + (stats.failed||0) + '</div></div>'
+      );
+
+      if (!msgs.length) { $('#cr-msg-table').html('<div class="cr-empty"><h3>No messages yet</h3><p>Recovery messages will appear here once sent.</p></div>'); return; }
+
+      var html = '<table class="cr-table"><thead><tr><th>Customer</th><th>Channel</th><th>Step</th><th>Status</th><th>Sent</th></tr></thead><tbody>';
+      for (var i = 0; i < msgs.length; i++) {
+        var m = msgs[i];
+        html += '<tr><td>' + self.esc(m.customer_name||m.customer_email||'Unknown') + '</td>';
+        html += '<td><span class="cr-badge cr-badge-whatsapp">WhatsApp</span></td>';
+        html += '<td>#' + m.step_number + '</td>';
+        html += '<td>' + self.msgBadge(m.status) + '</td>';
+        html += '<td>' + (m.sent_at ? self.timeAgo(m.sent_at) : '—') + '</td></tr>';
+      }
+      html += '</tbody></table>';
+      $('#cr-msg-table').html(html);
+    });
+  },
+
+
+  // === WHATSAPP PAGE ===
+  renderWhatsApp: function() {
+    var $c = $('#cr-content');
+    $c.html(
+      '<div class="cr-page-header"><div><h1 class="cr-page-title">WhatsApp Connection</h1><p class="cr-page-subtitle">Connect your WhatsApp Business account via QR code</p></div></div>' +
+      '<div class="cr-card" id="cr-wa-card"><div class="cr-card-body" style="text-align:center;padding:40px;"><div class="cr-loader"></div><p>Loading WhatsApp status...</p></div></div>' +
+      '<div class="cr-card"><div class="cr-card-header"><h3>Send Test Message</h3></div><div class="cr-card-body">' +
+        '<div class="cr-field"><label class="cr-label">Phone Number (with country code)</label><input type="text" id="cr-test-phone" class="cr-input" placeholder="+919876543210" style="max-width:300px"></div>' +
+        '<button class="cr-btn cr-btn-primary" id="cr-test-btn">Send Test</button>' +
+        '<div id="cr-test-result" style="margin-top:12px"></div>' +
+      '</div></div>'
+    );
+
+    this.pollWhatsApp();
+    var self = this;
+
+    $(document).on('click', '#cr-test-btn', function() {
+      var phone = $('#cr-test-phone').val();
+      if (!phone) { self.toast('Enter phone number', 'error'); return; }
+      $(this).prop('disabled', true).text('Sending...');
+      $.post(crAdmin.ajaxUrl, { action: 'cr_test_message', nonce: crAdmin.nonce, phone: phone }, function(r) {
+        $('#cr-test-btn').prop('disabled', false).text('Send Test');
+        if (r.success) { $('#cr-test-result').html('<span style="color:var(--cr-success)">&#x2705; ' + r.data + '</span>'); }
+        else { $('#cr-test-result').html('<span style="color:var(--cr-danger)">&#x274C; ' + (r.data||'Failed') + '</span>'); }
+      });
     });
 
+    $(document).on('click', '#cr-wa-disconnect', function() {
+      $.post(crAdmin.ajaxUrl, { action: 'cr_disconnect_whatsapp', nonce: crAdmin.nonce }, function() {
+        self.toast('Disconnected', 'success');
+        self.pollWhatsApp();
+      });
+    });
+
+    $(document).on('click', '#cr-wa-restart', function() {
+      $.post(crAdmin.ajaxUrl, { action: 'cr_restart_whatsapp', nonce: crAdmin.nonce }, function() {
+        self.toast('Restarting...', 'success');
+        setTimeout(function() { self.pollWhatsApp(); }, 3000);
+      });
+    });
+  },
+
+  pollWhatsApp: function() {
+    var self = this;
+    $.post(crAdmin.ajaxUrl, { action: 'cr_get_whatsapp_status', nonce: crAdmin.nonce }, function(r) {
+      if (!r.success || !r.data) {
+        $('#cr-wa-card .cr-card-body').html('<div class="cr-empty"><h3>Backend not connected</h3><p>Please configure your backend URL in Settings first.</p></div>');
+        return;
+      }
+      var wa = r.data;
+      var html = '';
+
+      if (wa.status === 'connected') {
+        html = '<div style="text-align:center;padding:40px">' +
+          '<div style="font-size:64px;margin-bottom:16px">&#x2705;</div>' +
+          '<h2 style="color:var(--cr-success);margin-bottom:8px">WhatsApp Connected!</h2>' +
+          '<p style="color:var(--cr-text-muted);margin-bottom:8px">Logged in as: <strong>' + (wa.info ? wa.info.name + ' (' + wa.info.phone + ')' : 'Unknown') + '</strong></p>' +
+          '<p style="color:var(--cr-text-muted);margin-bottom:24px">Messages are being sent automatically to abandoned cart customers.</p>' +
+          '<button class="cr-btn cr-btn-danger" id="cr-wa-disconnect">Disconnect</button>' +
+        '</div>';
+      } else if (wa.status === 'qr_ready' && wa.qrCode) {
+        html = '<div class="cr-qr-container">' +
+          '<h3 style="margin-bottom:16px">Scan this QR code with WhatsApp</h3>' +
+          '<img src="' + wa.qrCode + '" alt="QR Code" style="max-width:260px;border-radius:12px;background:#fff;padding:16px">' +
+          '<p class="cr-qr-instruction">Open WhatsApp > Settings > Linked Devices > Link a Device</p>' +
+        '</div>';
+        // Auto-refresh
+        setTimeout(function() { if (self.currentPage === 'whatsapp') self.pollWhatsApp(); }, 5000);
+      } else {
+        html = '<div style="text-align:center;padding:40px">' +
+          '<div style="font-size:64px;margin-bottom:16px">&#x1F4F1;</div>' +
+          '<h3 style="margin-bottom:8px">WhatsApp Disconnected</h3>' +
+          '<p style="color:var(--cr-text-muted);margin-bottom:24px">Click restart to generate a new QR code.</p>' +
+          '<button class="cr-btn cr-btn-primary" id="cr-wa-restart">Restart Connection</button>' +
+        '</div>';
+      }
+
+      $('#cr-wa-card .cr-card-body').html(html);
+    });
+  },
+
+
+  // === SETTINGS PAGE ===
+  renderSettings: function() {
+    var s = crAdmin.settings || {};
+    var $c = $('#cr-content');
+    $c.html(
+      '<div class="cr-page-header"><div><h1 class="cr-page-title">Settings</h1><p class="cr-page-subtitle">Configure Checkout Rescuer</p></div>' +
+      '<button class="cr-btn cr-btn-primary" id="cr-save-settings">Save Settings</button></div>' +
+      '<div class="cr-settings-grid">' +
+        '<div class="cr-settings-section"><h3>Connection</h3>' +
+          '<div class="cr-field"><label class="cr-label">Backend URL (Hugging Face)</label><input type="text" class="cr-input" name="backend_url" value="' + this.esc(s.backend_url||'') + '" placeholder="https://your-space.hf.space"></div>' +
+          '<div class="cr-field"><label class="cr-label">API Secret Key</label><input type="text" class="cr-input" name="api_key" value="' + this.esc(s.api_key||'') + '" placeholder="your-secret-key"></div>' +
+          '<div class="cr-field"><label class="cr-label">Store Name</label><input type="text" class="cr-input" name="store_name" value="' + this.esc(s.store_name||'') + '"></div>' +
+          '<div class="cr-field"><label class="cr-label">Default Country Code</label><input type="text" class="cr-input" name="country_code" value="' + this.esc(s.country_code||'+91') + '" style="max-width:120px"></div>' +
+        '</div>' +
+        '<div class="cr-settings-section"><h3>Cart Recovery</h3>' +
+          '<div class="cr-field"><label class="cr-label">Enable Recovery</label><label class="cr-toggle"><input type="checkbox" name="enabled" ' + (s.enabled!=='no'?'checked':'') + '><span class="cr-toggle-slider"></span></label></div>' +
+          '<div class="cr-field"><label class="cr-label">Abandonment Timeout (minutes)</label><input type="number" class="cr-input" name="abandonment_timeout" value="' + (s.abandonment_timeout||30) + '" min="5" style="max-width:120px"><p class="cr-help">Time after last activity before cart is abandoned</p></div>' +
+          '<div class="cr-field"><label class="cr-label">Max Messages per Cart</label><select class="cr-select" name="max_messages" style="max-width:120px"><option value="1" ' + ((s.max_messages||2)==1?'selected':'') + '>1</option><option value="2" ' + ((s.max_messages||2)==2?'selected':'') + '>2</option></select></div>' +
+          '<div class="cr-field"><label class="cr-label">1st Message Delay (min)</label><input type="number" class="cr-input" name="message_1_delay" value="' + (s.message_1_delay||30) + '" style="max-width:120px"></div>' +
+          '<div class="cr-field"><label class="cr-label">2nd Message Delay (min)</label><input type="number" class="cr-input" name="message_2_delay" value="' + (s.message_2_delay||1440) + '" style="max-width:120px"><p class="cr-help">1440 = 24 hours</p></div>' +
+        '</div>' +
+        '<div class="cr-settings-section"><h3>Discount</h3>' +
+          '<div class="cr-field"><label class="cr-label">Enable Auto-Discount</label><label class="cr-toggle"><input type="checkbox" name="enable_discount" ' + (s.enable_discount!=='no'?'checked':'') + '><span class="cr-toggle-slider"></span></label></div>' +
+          '<div class="cr-field"><label class="cr-label">Discount Type</label><select class="cr-select" name="discount_type" style="max-width:180px"><option value="percent" ' + ((s.discount_type||'percent')==='percent'?'selected':'') + '>Percentage</option><option value="fixed" ' + ((s.discount_type||'percent')==='fixed'?'selected':'') + '>Fixed Amount</option></select></div>' +
+          '<div class="cr-field"><label class="cr-label">Discount Amount</label><input type="number" class="cr-input" name="discount_amount" value="' + (s.discount_amount||10) + '" style="max-width:120px"></div>' +
+          '<div class="cr-field"><label class="cr-label">Send Discount on Message #</label><select class="cr-select" name="discount_message_step" style="max-width:180px"><option value="1" ' + ((s.discount_message_step||2)==1?'selected':'') + '>1st Message</option><option value="2" ' + ((s.discount_message_step||2)==2?'selected':'') + '>2nd Message</option></select></div>' +
+        '</div>' +
+        '<div class="cr-settings-section"><h3>Consent & Privacy</h3>' +
+          '<div class="cr-field"><label class="cr-label">Require Consent</label><label class="cr-toggle"><input type="checkbox" name="require_consent" ' + (s.require_consent!=='no'?'checked':'') + '><span class="cr-toggle-slider"></span></label><p class="cr-help">GDPR compliance recommended</p></div>' +
+          '<div class="cr-field"><label class="cr-label">Consent Text</label><input type="text" class="cr-input" name="consent_text" value="' + this.esc(s.consent_text||'') + '"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="cr-card" style="margin-top:24px"><div class="cr-card-header"><h3>Message Templates</h3></div><div class="cr-card-body"><div class="cr-two-col">' +
+        '<div class="cr-field"><label class="cr-label">Message #1 (Initial)</label><textarea class="cr-textarea" name="message_template_1" rows="6">' + this.esc(s.message_template_1||'') + '</textarea><p class="cr-help">Variables: {{customer_name}} {{store_name}} {{cart_total}} {{cart_items}} {{recovery_link}}</p></div>' +
+        '<div class="cr-field"><label class="cr-label">Message #2 (With Discount)</label><textarea class="cr-textarea" name="message_template_2" rows="6">' + this.esc(s.message_template_2||'') + '</textarea><p class="cr-help">Additional: {{coupon_code}} {{discount_amount}}</p></div>' +
+      '</div></div></div>'
+    );
+
+    var self = this;
+    $('#cr-save-settings').on('click', function() { self.saveSettings($(this)); });
+  },
+
+  saveSettings: function($btn) {
+    var settings = {};
+    $('#cr-content').find('input[name], select[name], textarea[name]').each(function() {
+      var $el = $(this), name = $el.attr('name');
+      if ($el.attr('type') === 'checkbox') settings[name] = $el.is(':checked') ? 'yes' : 'no';
+      else settings[name] = $el.val();
+    });
+
+    $btn.text('Saving...').prop('disabled', true);
+    $.post(crAdmin.ajaxUrl, { action: 'cr_save_settings', nonce: crAdmin.nonce, settings: settings }, function(r) {
+      $btn.text('Save Settings').prop('disabled', false);
+      if (r.success) { CR.toast('Settings saved!', 'success'); crAdmin.settings = settings; }
+      else CR.toast(r.data || 'Error', 'error');
+    });
+  },
+
+
+  // === EVENT BINDINGS ===
+  startWaPolling: function() {
+    var self = this;
+    $(document).on('click', '.cr-resend', function() {
+      var id = $(this).data('id');
+      $(this).text('Sending...').prop('disabled', true);
+      $.post(crAdmin.ajaxUrl, { action: 'cr_resend_message', nonce: crAdmin.nonce, cart_id: id }, function(r) {
+        if (r.success) CR.toast('Message sent!', 'success');
+        else CR.toast(r.data || 'Failed', 'error');
+        self.loadCarts($('#cr-cart-tabs .cr-tab.active').data('status') || 'abandoned');
+      });
+    });
+
+    $(document).on('click', '.cr-del-cart', function() {
+      if (!confirm('Delete this cart?')) return;
+      var id = $(this).data('id');
+      $.post(crAdmin.ajaxUrl, { action: 'cr_delete_cart', nonce: crAdmin.nonce, cart_id: id }, function() {
+        CR.toast('Deleted', 'success');
+        self.loadCarts($('#cr-cart-tabs .cr-tab.active').data('status') || 'abandoned');
+      });
+    });
+  },
+
+  // === UTILITIES ===
+  fmt: function(n) { return parseFloat(n||0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); },
+  esc: function(s) { return $('<div>').text(s||'').html(); },
+
+  timeAgo: function(dateStr) {
+    var diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    return Math.floor(diff/86400) + 'd ago';
+  },
+
+  statusBadge: function(status) {
+    var map = { abandoned:'warning', recovered:'success', active:'info', converted:'neutral' };
+    return '<span class="cr-badge cr-badge-' + (map[status]||'neutral') + '">' + (status||'unknown').charAt(0).toUpperCase() + (status||'').slice(1) + '</span>';
+  },
+
+  msgBadge: function(status) {
+    var map = { sent:'info', delivered:'success', read:'success', failed:'danger', queued:'neutral' };
+    return '<span class="cr-badge cr-badge-' + (map[status]||'neutral') + '">' + (status||'unknown').charAt(0).toUpperCase() + (status||'').slice(1) + '</span>';
+  },
+
+  toast: function(msg, type) {
+    var $t = $('<div class="cr-toast cr-toast-' + type + '">' + msg + '</div>');
+    $('body').append($t);
+    setTimeout(function() { $t.fadeOut(300, function(){ $t.remove(); }); }, 3500);
+  }
+};
+
+$(document).ready(function() { CR.init(); });
 })(jQuery);
+// END OF FILE
